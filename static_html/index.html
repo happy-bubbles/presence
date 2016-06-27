@@ -1,0 +1,106 @@
+<!doctype html>
+
+<html>
+  <head>
+    <title>Happy Bubbles - Presence Server</title>
+		<!--Let browser know website is optimized for mobile-->
+		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <script src="js/jquery.min.js"></script>
+		<link rel="stylesheet" href="css/materialize.min.css">
+		<script src="js/materialize.min.js"></script>
+		<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="stylesheet" href="css/presence.css">
+
+    <!--[if lt IE 9]>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/es5-shim/4.0.5/es5-shim.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.2/html5shiv.min.js"></script>
+    <script>html5.addElements('latest_beacons')</script>
+    <![endif]-->
+
+  </head>
+
+	<body>
+
+	<nav>
+		<div class="nav-wrapper">
+			<a href="#home" class="brand-logo"><img class="logo" src="img/hippo.svg"></img></a>
+			<span class="logo-title hide-on-med-and-down">Happy Bubbles</span>
+			<ul id="nav-mobile" class="right hide-on-med-and-down">
+				<li><a href="#home">Home</a></li>
+				<li><a href="#latest-beacons">Latest Beacons Seen</a></li>
+				<li><a href="#settings">Settings</a></li>
+			</ul>
+			<ul id="slide-out" class="side-nav">
+				<li><a href="#home">Home</a></li>
+				<li><a href="#latest-beacons">Latest Beacons Seen</a></li>
+				<li><a href="#settings">Settings</a></li>
+			</ul>
+			<a href="#" data-activates="slide-out" class="button-collapse"><i class="material-icons">menu</i></a>
+
+		</div>
+	</nav>
+
+
+	<div id="current_mount" class="container"></div>
+
+	<script src="js/home.tag" type="riot/tag"></script>
+	<script src="js/settings.tag" type="riot/tag"></script>
+	<script src="js/latest_beacons.tag" type="riot/tag"></script>
+	<script src="js/add-beacon.tag" type="riot/tag"></script>
+	<script src="js/riot-compiler.min.js"></script>
+	<script src="js/moment.min.js"></script>
+
+	<script>
+
+		riot.mount('#current_mount', 'home', {
+			title: 'Found Beacons',
+      beacons: [
+      ]
+    });
+		riot.route.start(true)
+
+		riot.route('/latest-beacons', function(name) {
+			$('.button-collapse').sideNav('hide');
+    	riot.mount('#current_mount', 'latest_beacons', {
+      	title: 'Latest Beacons Seen',
+			})
+		});
+		
+		riot.route('/home', function(name) {
+			$('.button-collapse').sideNav('hide');
+    	riot.mount('#current_mount', 'home', {
+      	title: 'Found Beacons',
+			})
+		});
+		
+		riot.route('/settings', function(name) {
+			$('.button-collapse').sideNav('hide');
+    	riot.mount('#current_mount', 'settings', {
+      	title: 'Settings',
+			})
+		});
+
+		riot.route('/add-beacon/*', function(beacon_id) {
+			$('.button-collapse').sideNav('hide');
+    	riot.mount('#current_mount', 'add-beacon', {
+      	title: 'Add Beacon',
+      	beacon_id: beacon_id,
+			})
+		});
+
+		riot.route('/edit-beacon/*/*', function(beacon_id, beacon_name) {
+			$('.button-collapse').sideNav('hide');
+    	riot.mount('#current_mount', 'add-beacon', {
+      	title: 'Edit Beacon',
+      	beacon_id: beacon_id,
+      	beacon_name: beacon_name,
+			})
+		});
+		$(".button-collapse").sideNav();
+	  </script>
+
+  </body>
+
+</html>
+
