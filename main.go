@@ -115,9 +115,9 @@ type Beacon struct {
 	Beacon_location             string        `json:"beacon_location"`
 	Last_seen                   int64         `json:"last_seen"`
 	Incoming_JSON               Incoming_json `json:"incoming_json"`
-	previous_location           string
-	previous_confident_location string
-	location_confidence         int64
+	Previous_location           string
+	Previous_confident_location string
+	Location_confidence         int64
 }
 
 type Beacons_list struct {
@@ -207,6 +207,8 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 	http_results.Results = make([]HTTP_location, 0)
 	http_results_lock.Unlock()
 
+	should_persist := false
+
 	// iterate through the beacons we want to search for
 	for _, beacon := range BEACONS.Beacons {
 		//fmt.Printf("doing iteration and saw %s with ID %s\n", beacon_name, beacon_id)
@@ -244,10 +246,10 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 		}
 
 		//filter, only let this location become best if it was X times in a row
-		if best_location.name == beacon.previous_location {
-			beacon.location_confidence = beacon.location_confidence + 1
+		if best_location.name == beacon.Previous_location {
+			beacon.Location_confidence = beacon.Location_confidence + 1
 		} else {
-			beacon.location_confidence = 0
+			beacon.Location_confidence = 0
 		}
 
 		//create an http result from this
@@ -259,17 +261,17 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 		r.Location = best_location.name
 		r.Last_seen = best_location.last_seen
 
-		//if beacon.previous_location != best_location.name {
-		if beacon.location_confidence == *location_confidence_ptr && beacon.previous_confident_location != best_location.name {
+		if beacon.Location_confidence == *location_confidence_ptr && beacon.Previous_confident_location != best_location.name {
 			// location has changed, send an mqtt message
 
+			should_persist = true
 			fmt.Printf("detected a change!!! %#v\n\n", beacon)
 
 			// just for good measure, should have to earn it
-			beacon.location_confidence = 0
+			beacon.Location_confidence = 0
 
 			//first make the json
-			js, err := json.Marshal(Location_change{Beacon_ref: beacon, Name: beacon.Name, Beacon_name: beacon.Name, Previous_location: beacon.previous_confident_location, New_location: best_location.name, Timestamp: time.Now().Unix()})
+			js, err := json.Marshal(Location_change{Beacon_ref: beacon, Name: beacon.Name, Beacon_name: beacon.Name, Previous_location: beacon.Previous_confident_location, New_location: best_location.name, Timestamp: time.Now().Unix()})
 			if err != nil {
 				continue
 			}
@@ -283,10 +285,10 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 			if err != nil {
 				panic(err)
 			}
-			beacon.previous_confident_location = best_location.name
+			beacon.Previous_confident_location = best_location.name
 		}
 
-		beacon.previous_location = best_location.name
+		beacon.Previous_location = best_location.name
 
 		BEACONS.lock.Lock()
 		BEACONS.Beacons[beacon.Beacon_id] = beacon
@@ -307,6 +309,10 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 		if err != nil {
 			panic(err)
 		}
+	}
+
+	if should_persist {
+		persistBeacons()
 	}
 }
 
@@ -410,8 +416,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	fmt.Println("subscribing")
 
 	// Subscribe to topics.
 	err = cli.Subscribe(&client.SubscribeOptions{
