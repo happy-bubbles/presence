@@ -115,6 +115,7 @@ type Beacon struct {
 	Beacon_location             string        `json:"beacon_location"`
 	Last_seen                   int64         `json:"last_seen"`
 	Incoming_JSON               Incoming_json `json:"incoming_json"`
+	Distance                    float64       `json:"distance"`
 	Previous_location           string
 	Previous_confident_location string
 	Location_confidence         int64
@@ -194,6 +195,7 @@ func getBeaconDistance(incoming Incoming_json) float64 {
 
 func getAverageDistance(beacon_metrics []Beacon_metric) float64 {
 	total := 0.0
+
 	for _, v := range beacon_metrics {
 		total += v.distance
 	}
@@ -224,17 +226,9 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 			if ok {
 				//fmt.Printf("found %s in %s\n", beacon_id, location_name)
 				if (now - found_b.last_seen) > last_seen_threshold {
-					//fmt.Printf("continuing\n")
 					continue
 				}
 				ldistance := location.found_beacons[beacon.Beacon_id].average_distance
-
-				//debug stuff, show other candidates
-				/*
-					for _, vv := range location.found_beacons[beacon.Beacon_id].beacon_metrics {
-						fmt.Printf("DEBUG: %s - %f |", location.name, vv.distance)
-					}
-				*/
 
 				if best_location == (Best_location{}) {
 					best_location = Best_location{name: location.name, distance: ldistance, last_seen: location.found_beacons[beacon.Beacon_id].last_seen}
@@ -244,6 +238,24 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 			}
 			location.lock.RUnlock()
 		}
+
+		// debug stuff, show other candidates
+
+		/*
+			fmt.Printf("DEBUG: %s - best location: %s \n", beacon.Name, best_location.name)
+			for _, location := range locations {
+				avg_distance := location.found_beacons[beacon.Beacon_id].average_distance
+				now = time.Now().Unix()
+				ago := now - location.found_beacons[beacon.Beacon_id].last_seen
+				fmt.Printf("\t%s - average: %f, metrics: %d, last_seen: %d\n", location.name, avg_distance, len(location.found_beacons[beacon.Beacon_id].beacon_metrics), ago)
+				fmt.Printf("\t\t")
+				for _, met := range location.found_beacons[beacon.Beacon_id].beacon_metrics {
+					fmt.Printf("%f ", met.distance)
+				}
+				fmt.Printf("\n")
+			}
+			fmt.Printf("\n")
+		*/
 
 		//filter, only let this location become best if it was X times in a row
 		if best_location.name == beacon.Previous_location {
@@ -286,6 +298,30 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 				panic(err)
 			}
 			beacon.Previous_confident_location = best_location.name
+
+			// clear all previous entries of this beacon from all locations, except this best one
+			//log.Println("before clear")
+			for k, location := range locations {
+				log.Println(location.name, beacon.Name, len(location.found_beacons[beacon.Name].beacon_metrics))
+				if location.name == best_location.name {
+					continue
+				}
+				log.Println("deleting ", beacon.Name, "from ", location.name)
+				delete(location.found_beacons, beacon.Name)
+				/*
+					locbeac := location.found_beacons[beacon.Name]
+					locbeac.beacon_metrics = make([]Beacon_metric, 1)
+					location.found_beacons[beacon.Name] = locbeac
+				*/
+				locations[k] = location
+			}
+
+			/*
+				log.Println("after clear")
+				for _, location := range locations {
+					log.Println(location.name, beacon.Name, len(location.found_beacons[beacon.Name].beacon_metrics))
+				}
+			*/
 		}
 
 		beacon.Previous_location = best_location.name
@@ -450,9 +486,10 @@ func main() {
 							//update its timestamp
 							x.Last_seen = now
 							x.Incoming_JSON = incoming
+							x.Distance = getBeaconDistance(incoming)
 							Latest_beacons_list[this_beacon_id] = x
 						} else {
-							Latest_beacons_list[this_beacon_id] = Beacon{Beacon_id: this_beacon_id, Beacon_type: incoming.Beacon_type, Last_seen: now, Incoming_JSON: incoming, Beacon_location: incoming.Hostname}
+							Latest_beacons_list[this_beacon_id] = Beacon{Beacon_id: this_beacon_id, Beacon_type: incoming.Beacon_type, Last_seen: now, Incoming_JSON: incoming, Beacon_location: incoming.Hostname, Distance: getBeaconDistance(incoming)}
 						}
 						for k, v := range Latest_beacons_list {
 							if (now - v.Last_seen) > 10 { // 10 seconds
@@ -504,7 +541,9 @@ func main() {
 					for i, metric := range this_found.beacon_metrics {
 						//if a reading is older than the threshold, remove it from calculations and list
 						if (now - metric.timestamp) > *last_reading_threshold_ptr {
+							//x := len(this_found.beacon_metrics)
 							this_found.beacon_metrics = append(this_found.beacon_metrics[:i], this_found.beacon_metrics[i+1:]...)
+							//log.Println("removing metric from ", location.name, " and beacon ", this_found.beacon_id, "had ", x, " now has: ", len(this_found.beacon_metrics))
 						}
 					}
 

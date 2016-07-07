@@ -11,6 +11,7 @@
 			<th>Beacon Location</th>
 			<th>Beacon type</th>
 			<th>Last seen</th>
+			<th>Distance</th>
 			<th>Add</th>
 		</tr>
     <tr each={ beacons }>
@@ -19,6 +20,7 @@
 			<td if={beacon_type == ""} >raw</td>
 			<td if={beacon_type != ""} >{ beacon_type }</td>
 			<td>{ moment(last_seen*1000).fromNow() }</td> 
+			<td if={distance != ""} >{ distance }</td>
 			<td><a href="#add-beacon/{ beacon_id }">Add this beacon</a></td>
     </tr>
   </table>
@@ -55,8 +57,19 @@
 			});
 			//console.log("latest")
 			//console.log(data)
-			self.beacons = data
-			self.update()				
+			self.beacons = data.map(function(b)
+				{
+				if(b.beacon_type=="ibeacon") 
+				{
+					b.distance = Math.round(parseFloat(b.distance)*100)/100 +" meters";
+				}
+				else 
+				{
+					b.distance = "-"+b.distance+ " db";
+				}
+				return b;
+			});
+			self.update();
 		};
 				
 		var onopen = function()
