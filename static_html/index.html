@@ -54,7 +54,7 @@
 	<script>
 
 		riot.mount('#current_mount', 'home', {
-			title: 'Found Beacons',
+			title: 'Added Beacons',
       beacons: [
       ]
     });
@@ -63,14 +63,14 @@
 		riot.route('/latest-beacons', function(name) {
 			$('.button-collapse').sideNav('hide');
     	riot.mount('#current_mount', 'latest_beacons', {
-      	title: 'Latest Beacons Seen',
+      	title: 'All Latest Beacons Seen',
 			})
 		});
 		
 		riot.route('/home', function(name) {
 			$('.button-collapse').sideNav('hide');
     	riot.mount('#current_mount', 'home', {
-      	title: 'Found Beacons',
+      	title: 'Added Beacons',
 			})
 		});
 		
