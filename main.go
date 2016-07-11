@@ -40,6 +40,12 @@ const (
 
 // data structures
 
+type Settings struct {
+	Location_confidence    int64 `json:"location_confidence"`
+	Last_seen_threshold    int64 `json:"last_seen_threshold"`
+	Last_reading_threshold int64 `json:"last_reading_threshold"`
+}
+
 type Incoming_json struct {
 	Hostname         string `json:"hostname"`
 	MAC              string `json:"mac"`
@@ -149,7 +155,11 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 }
 
-var location_confidence_ptr = flag.Int64("location_confidence", 3, "how tight location smoothing is, the higher the more accurate but takes longer")
+var settings = Settings{
+	Location_confidence:    8,
+	Last_seen_threshold:    45,
+	Last_reading_threshold: 8,
+}
 
 // utility function
 
@@ -273,7 +283,7 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 		r.Location = best_location.name
 		r.Last_seen = best_location.last_seen
 
-		if beacon.Location_confidence == *location_confidence_ptr && beacon.Previous_confident_location != best_location.name {
+		if beacon.Location_confidence == settings.Location_confidence && beacon.Previous_confident_location != best_location.name {
 			// location has changed, send an mqtt message
 
 			should_persist = true
@@ -352,18 +362,16 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 	}
 }
 
-func getLikelyLocationsPoller(last_seen_threshold int64, last_reading_threshold int64, locations map[string]Location, cl *client.Client) {
+func getLikelyLocationsPoller(locations map[string]Location, cl *client.Client) {
 	for {
 		<-time.After(1 * time.Second)
-		go getLikelyLocations(last_seen_threshold, last_reading_threshold, locations, cl)
+		go getLikelyLocations(settings.Last_seen_threshold, settings.Last_reading_threshold, locations, cl)
 	}
 }
 
 var http_host_path_ptr *string
 
 func main() {
-	last_seen_threshold_ptr := flag.Int64("last_seen_threshold", 13, "discard beacon if not seen for this many seconds")
-	last_reading_threshold_ptr := flag.Int64("last_reading_threshold", 7, "if a reading is older than this many seconds, remove it from calculations")
 	http_host_path_ptr = flag.String("http_host_path", "localhost:5555", "The host:port that the HTTP server should listen on")
 
 	mqtt_host_ptr := flag.String("mqtt_host", "localhost:1883", "The host:port of the MQTT server to listen for Happy Bubbles beacons on")
@@ -410,6 +418,17 @@ func main() {
 			}
 		}
 
+		key = []byte("settings")
+		val = bucket.Get(key)
+		if val != nil {
+			buf := bytes.NewBuffer(val)
+			dec := gob.NewDecoder(buf)
+			err = dec.Decode(&settings)
+			if err != nil {
+				log.Fatal("decode error:", err)
+			}
+		}
+
 		return nil
 	})
 
@@ -421,6 +440,7 @@ func main() {
 	for _, beacon := range BEACONS.Beacons {
 		fmt.Println("list has " + beacon.Beacon_id + " " + beacon.Name)
 	}
+	fmt.Println("Settings has %#v\n", settings)
 
 	Latest_beacons_list = make(map[string]Beacon)
 
@@ -462,10 +482,8 @@ func main() {
 				QoS:         mqtt.QoS0,
 				// Define the processing of the message handler.
 				Handler: func(topicName, message []byte) {
-					//fmt.Println(string(topicName), string(message), *last_reading_threshold_ptr, *last_seen_threshold_ptr, time.Now().Unix())
 					incoming := Incoming_json{}
 					json.Unmarshal(message, &incoming)
-					//fmt.Println(string(topicName), getBeaconID(incoming), getBeaconDistance(incoming), time.Now().Unix())
 
 					this_beacon_id := getBeaconID(incoming)
 
@@ -540,7 +558,7 @@ func main() {
 					//go through all the metrics in the location and get average
 					for i, metric := range this_found.beacon_metrics {
 						//if a reading is older than the threshold, remove it from calculations and list
-						if (now - metric.timestamp) > *last_reading_threshold_ptr {
+						if (now - metric.timestamp) > settings.Last_reading_threshold {
 							//x := len(this_found.beacon_metrics)
 							this_found.beacon_metrics = append(this_found.beacon_metrics[:i], this_found.beacon_metrics[i+1:]...)
 							//log.Println("removing metric from ", location.name, " and beacon ", this_found.beacon_id, "had ", x, " now has: ", len(this_found.beacon_metrics))
@@ -561,7 +579,7 @@ func main() {
 	}
 
 	// create a thread for finding all the closest beacons
-	go getLikelyLocationsPoller(*last_seen_threshold_ptr, *last_reading_threshold_ptr, locations, cli)
+	go getLikelyLocationsPoller(locations, cli)
 
 	go startServer()
 
@@ -590,8 +608,8 @@ func startServer() {
 	// probably all the current command-line things:
 	// * mqtt connect stuff user/pass/host/port/client-id - have indicator to show it's connected to mqtt server, reconnect when needed
 	// * thresholds
-	r.HandleFunc("/api/config", configListHandler).Methods("GET")
-	r.HandleFunc("/api/config", configEditHandler).Methods("POST")
+	r.HandleFunc("/api/settings", settingsListHandler).Methods("GET")
+	r.HandleFunc("/api/settings", settingsEditHandler).Methods("POST")
 
 	r.PathPrefix("/js/").Handler(http.StripPrefix("/js/", http.FileServer(http.Dir("static_html/js/"))))
 	r.PathPrefix("/css/").Handler(http.StripPrefix("/css/", http.FileServer(http.Dir("static_html/css/"))))
@@ -647,6 +665,31 @@ func persistBeacons() error {
 	}
 
 	key := []byte("beacons_list")
+	// store some data
+	err = db.Update(func(tx *bolt.Tx) error {
+		bucket, err := tx.CreateBucketIfNotExists(world)
+		if err != nil {
+			return err
+		}
+
+		err = bucket.Put(key, []byte(buf.String()))
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	return nil
+}
+
+func persistSettings() error {
+	// gob it first
+	buf := &bytes.Buffer{}
+	enc := gob.NewEncoder(buf)
+	if err := enc.Encode(settings); err != nil {
+		return err
+	}
+
+	key := []byte("settings")
 	// store some data
 	err = db.Update(func(tx *bolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists(world)
@@ -719,8 +762,8 @@ func latestBeaconsListHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(js)
 }
 
-func configListHandler(w http.ResponseWriter, r *http.Request) {
-	js, err := json.Marshal(http_results.Results)
+func settingsListHandler(w http.ResponseWriter, r *http.Request) {
+	js, err := json.Marshal(settings)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -729,14 +772,32 @@ func configListHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(js)
 }
 
-func configEditHandler(w http.ResponseWriter, r *http.Request) {
-	js, err := json.Marshal(http_results.Results)
+func settingsEditHandler(w http.ResponseWriter, r *http.Request) {
+	decoder := json.NewDecoder(r.Body)
+	var in_settings Settings
+	err = decoder.Decode(&in_settings)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), 400)
 		return
 	}
 
-	w.Write(js)
+	//make sure values are > 0
+	if (in_settings.Location_confidence <= 0) ||
+		(in_settings.Last_seen_threshold <= 0) ||
+		(in_settings.Last_reading_threshold <= 0) {
+		http.Error(w, "values must be greater than 0", 400)
+		return
+	}
+
+	settings = in_settings
+
+	err := persistSettings()
+	if err != nil {
+		http.Error(w, "trouble persisting settings, create bucket", 500)
+		return
+	}
+
+	w.Write([]byte("ok"))
 }
 
 //websocket stuff
