@@ -437,10 +437,12 @@ func main() {
 	}
 
 	//debug list them out
-	for _, beacon := range BEACONS.Beacons {
-		fmt.Println("list has " + beacon.Beacon_id + " " + beacon.Name)
-	}
-	fmt.Println("Settings has %#v\n", settings)
+	/*
+		for _, beacon := range BEACONS.Beacons {
+			fmt.Println("Database has known beacon: " + beacon.Beacon_id + " " + beacon.Name)
+		}
+	*/
+	//fmt.Println("Settings has %#v\n", settings)
 
 	Latest_beacons_list = make(map[string]Beacon)
 
@@ -472,6 +474,13 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	fmt.Println(" _   _    _    ____  ______   __  ____  _   _ ____  ____  _     _____ ____\n| | | |  / \\  |  _ \\|  _ \\ \\ / / | __ )| | | | __ )| __ )| |   | ____/ ___|\n| |_| | / _ \\ | |_) | |_) \\ V /  |  _ \\| | | |  _ \\|  _ \\| |   |  _| \\___ \\\n|  _  |/ ___ \\|  __/|  __/ | |   | |_) | |_| | |_) | |_) | |___| |___ ___) |\n|_| |_/_/   \\_\\_|   |_|    |_|   |____/ \\___/|____/|____/|_____|_____|____/")
+	fmt.Println("\n ")
+	fmt.Println("CONNECTED TO MQTT")
+	fmt.Println("\n ")
+	fmt.Println("Visit http://" + *http_host_path_ptr + " on your browser to see the web interface")
+	fmt.Println("\n ")
 
 	// Subscribe to topics.
 	err = cli.Subscribe(&client.SubscribeOptions{
