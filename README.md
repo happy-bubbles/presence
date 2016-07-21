@@ -29,5 +29,12 @@ or
 2. From the web interface (runs on port 3000 by default) you can visit the "Latest Seen Beacons" tab in the top right and find your beacon in there, then click "Add this beacon" which will let you give it a friendly name.
 3. If you subscribe to the MQTT topic "happy-bubbles/presence/changes" you will get JSON messages that tell you when your added beacons change location, disappear entirely, or appear at any new location.
 
+#### MQTT
+* The changes in location (when a beacon changes location or goes offline/online) are pushed to the "happy-bubbles/presence/changes" topic as they occur
+* The messages for the presence server status are all sent out over MQTT as well. The current status of all added beacons will be pushed to the "happy-bubbles/presence" topic once a second.
+The changes (when a beacon changes location or goes offline/online) by subscribing to "happy-bubbles/presence/changes"
+
+The payloads of both messages are in JSON format.
+
 #### TODO
 * Publish the HTTP and MQTT API for presence server
