@@ -218,6 +218,24 @@ func getAverageDistance(beacon_metrics []Beacon_metric) float64 {
 	return (total / float64(len(beacon_metrics)))
 }
 
+func sendHARoomMessage(beacon_id string, beacon_name string, distance float64, location string, cl *client.Client) {
+	//first make the json
+	ha_msg, err := json.Marshal(HA_message{Beacon_id: beacon_id, Beacon_name: beacon_name, Distance: distance})
+	if err != nil {
+		panic(err)
+	}
+
+	//send the message to HA
+	err = cl.Publish(&client.PublishOptions{
+		QoS:       mqtt.QoS1,
+		TopicName: []byte("happy-bubbles/presence/ha/" + location),
+		Message:   ha_msg,
+	})
+	if err != nil {
+		panic(err)
+	}
+}
+
 func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64, locations map[string]Location, cl *client.Client) {
 	// create the http results structure
 	http_results_lock.Lock()
@@ -314,22 +332,6 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 				panic(err)
 			}
 
-			//first make the json
-			ha_msg, err := json.Marshal(HA_message{Beacon_id: beacon.Beacon_id, Beacon_name: beacon.Name, Distance: best_location.distance})
-			if err != nil {
-				continue
-			}
-
-			//send the message to HA
-			err = cl.Publish(&client.PublishOptions{
-				QoS:       mqtt.QoS1,
-				TopicName: []byte("happy-bubbles/presence/ha/" + best_location.name),
-				Message:   ha_msg,
-			})
-			if err != nil {
-				panic(err)
-			}
-
 			beacon.Previous_confident_location = best_location.name
 
 			// clear all previous entries of this beacon from all locations, except this best one
@@ -366,6 +368,10 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 		http_results_lock.Lock()
 		http_results.Results = append(http_results.Results, r)
 		http_results_lock.Unlock()
+
+		if best_location.name != "" {
+			sendHARoomMessage(beacon.Beacon_id, beacon.Name, best_location.distance, best_location.name, cl)
+		}
 
 		//fmt.Printf("\n\n%s is most likely in %s with average distance %f \n\n", beacon.Name, best_location.name, best_location.distance)
 		// publish this to a topic
