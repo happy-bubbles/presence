@@ -63,33 +63,33 @@ type Incoming_json struct {
 }
 
 type Advertisement struct {
-	ttype   string `json:"type"`
-	content string `json:"content"`
-	seen    int64  `json:"seen"`
+	ttype   string
+	content string
+	seen    int64
 }
 
 type Beacon_metric struct {
-	distance  float64 `json:"distance"`
-	timestamp int64   `json:"timestamp"`
+	distance  float64
+	timestamp int64
 }
 
 type Found_beacon struct {
-	beacon_id        string  `json:"beacon_id"`
-	last_seen        int64   `json:"last_seen"`
-	average_distance float64 `json:"average_distance"`
+	beacon_id        string
+	last_seen        int64
+	average_distance float64
 	beacon_metrics   []Beacon_metric
 }
 
 type Location struct {
-	name          string `json:"name"`
+	name          string
 	found_beacons map[string]Found_beacon
 	lock          sync.RWMutex
 }
 
 type Best_location struct {
-	distance  float64 `json:"distance"`
-	name      string  `json:"name"`
-	last_seen int64   `json:"last_seen"`
+	distance  float64
+	name      string
+	last_seen int64
 }
 
 type HTTP_location struct {
@@ -108,6 +108,12 @@ type Location_change struct {
 	Previous_location string `json:"previous_location"`
 	New_location      string `json:"new_location"`
 	Timestamp         int64  `json:"timestamp"`
+}
+
+type HA_message struct {
+	Beacon_id   string  `json:"id"`
+	Beacon_name string  `json:"name"`
+	Distance    float64 `json:"distance"`
 }
 
 type HTTP_locations_list struct {
@@ -307,6 +313,23 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 			if err != nil {
 				panic(err)
 			}
+
+			//first make the json
+			ha_msg, err := json.Marshal(HA_message{Beacon_id: beacon.Beacon_id, Beacon_name: beacon.Name, Distance: best_location.distance})
+			if err != nil {
+				continue
+			}
+
+			//send the message to HA
+			err = cl.Publish(&client.PublishOptions{
+				QoS:       mqtt.QoS1,
+				TopicName: []byte("happy-bubbles/presence/ha/" + best_location.name),
+				Message:   ha_msg,
+			})
+			if err != nil {
+				panic(err)
+			}
+
 			beacon.Previous_confident_location = best_location.name
 
 			// clear all previous entries of this beacon from all locations, except this best one
