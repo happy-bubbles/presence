@@ -23,6 +23,8 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+
+	"./kalmanfilter"
 )
 
 const (
@@ -68,16 +70,11 @@ type Advertisement struct {
 	seen    int64
 }
 
-type Beacon_metric struct {
-	distance  float64
-	timestamp int64
-}
-
 type Found_beacon struct {
-	beacon_id        string
-	last_seen        int64
-	average_distance float64
-	beacon_metrics   []Beacon_metric
+	beacon_id    string
+	last_seen    int64
+	filter_data  *kalmanfilter.FilterData
+	latestKalman float64
 }
 
 type Location struct {
@@ -209,15 +206,6 @@ func getBeaconDistance(incoming Incoming_json) float64 {
 	return distance
 }
 
-func getAverageDistance(beacon_metrics []Beacon_metric) float64 {
-	total := 0.0
-
-	for _, v := range beacon_metrics {
-		total += v.distance
-	}
-	return (total / float64(len(beacon_metrics)))
-}
-
 func sendHARoomMessage(beacon_id string, beacon_name string, distance float64, location string, cl *client.Client) {
 	//first make the json
 	ha_msg, err := json.Marshal(HA_message{Beacon_id: beacon_id, Beacon_name: beacon_name, Distance: distance})
@@ -259,10 +247,12 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 			found_b, ok := location.found_beacons[beacon.Beacon_id]
 			if ok {
 				//fmt.Printf("found %s in %s\n", beacon_id, location_name)
+				ldistance := location.found_beacons[beacon.Beacon_id].latestKalman
 				if (now - found_b.last_seen) > last_seen_threshold {
-					continue
+					//continue
+					ldistance += 10.0
+					fmt.Println("\n", location.name, " exceeded threshold, now distance is", ldistance, (now - found_b.last_seen), "\n")
 				}
-				ldistance := location.found_beacons[beacon.Beacon_id].average_distance
 
 				if best_location == (Best_location{}) {
 					best_location = Best_location{name: location.name, distance: ldistance, last_seen: location.found_beacons[beacon.Beacon_id].last_seen}
@@ -278,7 +268,7 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 		/*
 			fmt.Printf("DEBUG: %s - best location: %s \n", beacon.Name, best_location.name)
 			for _, location := range locations {
-				avg_distance := location.found_beacons[beacon.Beacon_id].average_distance
+				avg_distance := location.found_beacons[beacon.Beacon_id].latestKalman
 				now = time.Now().Unix()
 				ago := now - location.found_beacons[beacon.Beacon_id].last_seen
 				fmt.Printf("\t%s - average: %f, metrics: %d, last_seen: %d\n", location.name, avg_distance, len(location.found_beacons[beacon.Beacon_id].beacon_metrics), ago)
@@ -298,20 +288,11 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 			beacon.Location_confidence = 0
 		}
 
-		//create an http result from this
-		r := HTTP_location{}
-		r.Distance = best_location.distance
-		r.Name = beacon.Name
-		r.Beacon_name = beacon.Name
-		r.Beacon_id = beacon.Beacon_id
-		r.Location = best_location.name
-		r.Last_seen = best_location.last_seen
-
 		if beacon.Location_confidence == settings.Location_confidence && beacon.Previous_confident_location != best_location.name {
 			// location has changed, send an mqtt message
 
 			should_persist = true
-			fmt.Printf("detected a change!!! %#v\n\n", beacon)
+			fmt.Printf("detected a change!!! %s - from %s to %s\n\n", beacon.Name, beacon.Previous_confident_location, best_location.name)
 
 			// just for good measure, should have to earn it
 			beacon.Location_confidence = 0
@@ -337,7 +318,7 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 			// clear all previous entries of this beacon from all locations, except this best one
 			//log.Println("before clear")
 			for k, location := range locations {
-				log.Println(location.name, beacon.Name, len(location.found_beacons[beacon.Name].beacon_metrics))
+				log.Println(location.name, beacon.Name)
 				if location.name == best_location.name {
 					continue
 				}
@@ -359,6 +340,14 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 			*/
 		}
 
+		//create an http result from this
+		r := HTTP_location{}
+		r.Distance = best_location.distance
+		r.Name = beacon.Name
+		r.Beacon_name = beacon.Name
+		r.Beacon_id = beacon.Beacon_id
+		r.Location = beacon.Previous_confident_location
+		r.Last_seen = best_location.last_seen
 		beacon.Previous_location = best_location.name
 
 		BEACONS.lock.Lock()
@@ -563,10 +552,7 @@ func main() {
 					BEACONS.Beacons[beacon.Beacon_id] = beacon
 					BEACONS.lock.Unlock()
 
-					//create metric for this beacon
-					this_metric := Beacon_metric{}
-					this_metric.distance = getBeaconDistance(incoming)
-					this_metric.timestamp = now
+					this_distance := getBeaconDistance(incoming)
 
 					//lookup location by hostname in locations
 					location, ok := locations[incoming.Hostname]
@@ -584,26 +570,35 @@ func main() {
 					this_found, ok := location.found_beacons[this_beacon_id]
 					location.lock.RUnlock()
 					if !ok {
-						//create this found beacon
-						this_found := Found_beacon{}
-						this_found.beacon_metrics = make([]Beacon_metric, 1)
+						//create kalman filter for this beacon
+						this_found.filter_data = new(kalmanfilter.FilterData)
+						fmt.Println(location, "first making new kalman")
+
+						this_found.filter_data.R = 1
+						this_found.filter_data.Q = 1
+						this_found.filter_data.A = 1
+						this_found.filter_data.B = 0
+						this_found.filter_data.C = 1
+
+					}
+					if this_found.filter_data == nil {
+						this_found.filter_data = new(kalmanfilter.FilterData)
+
+						this_found.filter_data.R = 1
+						this_found.filter_data.Q = 1
+						this_found.filter_data.A = 1
+						this_found.filter_data.B = 0
+						this_found.filter_data.C = 1
+						fmt.Println(location, "nil so making new kalman")
 					}
 					this_found.beacon_id = this_beacon_id
 					this_found.last_seen = now
-					//add this metric to its metrics
-					this_found.beacon_metrics = append(this_found.beacon_metrics, this_metric)
+					// add the kalman filter to this found beacon
+					//filval := this_found.filter_data.Update(this_metric.distance, 1.00, 10000000)
+					filval := this_found.filter_data.Update(this_distance)
+					this_found.latestKalman = filval
+					fmt.Println("KALMAN", filval, " -- ", location.name, this_found.beacon_id, this_distance)
 
-					//go through all the metrics in the location and get average
-					for i, metric := range this_found.beacon_metrics {
-						//if a reading is older than the threshold, remove it from calculations and list
-						if (now - metric.timestamp) > settings.Last_reading_threshold {
-							//x := len(this_found.beacon_metrics)
-							this_found.beacon_metrics = append(this_found.beacon_metrics[:i], this_found.beacon_metrics[i+1:]...)
-							//log.Println("removing metric from ", location.name, " and beacon ", this_found.beacon_id, "had ", x, " now has: ", len(this_found.beacon_metrics))
-						}
-					}
-
-					this_found.average_distance = getAverageDistance(this_found.beacon_metrics)
 					location.lock.Lock()
 					location.found_beacons[this_beacon_id] = this_found
 					location.lock.Unlock()
