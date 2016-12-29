@@ -138,11 +138,15 @@ type Beacons_list struct {
 	lock    sync.RWMutex
 }
 
+type Locations_list struct {
+	locations map[string]Location
+	lock      sync.RWMutex
+}
+
 // GLOBALS
 
 var BEACONS Beacons_list
 
-var locations map[string]Location
 var cli *client.Client
 
 var http_results HTTP_locations_list
@@ -236,7 +240,7 @@ func sendHARoomMessage(beacon_id string, beacon_name string, distance float64, l
 	}
 }
 
-func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64, locations map[string]Location, cl *client.Client) {
+func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64, locations_list Locations_list, cl *client.Client) {
 	// create the http results structure
 	http_results_lock.Lock()
 	http_results = HTTP_locations_list{}
@@ -252,7 +256,8 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 		best_location := Best_location{}
 		//go through each location
 		now := time.Now().Unix()
-		for _, location := range locations {
+		locations_list.lock.RLock()
+		for _, location := range locations_list.locations {
 			//fmt.Printf("doing iteration and saw location %s\n", location_name)
 			// get last_seen for this location
 			location.lock.RLock()
@@ -272,12 +277,13 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 			}
 			location.lock.RUnlock()
 		}
+		locations_list.lock.RUnlock()
 
 		// debug stuff, show other candidates
 
 		/*
 			fmt.Printf("DEBUG: %s - best location: %s \n", beacon.Name, best_location.name)
-			for _, location := range locations {
+			for _, location := range locations_list.locations {
 				avg_distance := location.found_beacons[beacon.Beacon_id].average_distance
 				now = time.Now().Unix()
 				ago := now - location.found_beacons[beacon.Beacon_id].last_seen
@@ -336,7 +342,9 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 
 			// clear all previous entries of this beacon from all locations, except this best one
 			//log.Println("before clear")
-			for k, location := range locations {
+
+			locations_list.lock.RLock()
+			for k, location := range locations_list.locations {
 				log.Println(location.name, beacon.Name, len(location.found_beacons[beacon.Name].beacon_metrics))
 				if location.name == best_location.name {
 					continue
@@ -348,7 +356,9 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 					locbeac.beacon_metrics = make([]Beacon_metric, 1)
 					location.found_beacons[beacon.Name] = locbeac
 				*/
-				locations[k] = location
+				locations_list.lock.Lock()
+				locations_list.locations[k] = location
+				locations_list.lock.Unlock()
 			}
 
 			/*
@@ -391,10 +401,10 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 	}
 }
 
-func getLikelyLocationsPoller(locations map[string]Location, cl *client.Client) {
+func getLikelyLocationsPoller(locations_list Locations_list, cl *client.Client) {
 	for {
 		<-time.After(1 * time.Second)
-		go getLikelyLocations(settings.Last_seen_threshold, settings.Last_reading_threshold, locations, cl)
+		go getLikelyLocations(settings.Last_seen_threshold, settings.Last_reading_threshold, locations_list, cl)
 	}
 }
 
@@ -476,7 +486,9 @@ func main() {
 	Latest_beacons_list = make(map[string]Beacon)
 
 	//create a map of locations, looked up by hostnames
-	locations := make(map[string]Location)
+	locations_list := Locations_list{}
+	ls := make(map[string]Location)
+	locations_list.locations = ls
 
 	// Set up channel on which to send signal notifications.
 	sigc := make(chan os.Signal, 1)
@@ -569,11 +581,11 @@ func main() {
 					this_metric.timestamp = now
 
 					//lookup location by hostname in locations
-					location, ok := locations[incoming.Hostname]
+					location, ok := locations_list.locations[incoming.Hostname]
 					if !ok {
 						//create the location
-						locations[incoming.Hostname] = Location{}
-						location, ok = locations[incoming.Hostname]
+						locations_list.locations[incoming.Hostname] = Location{}
+						location, ok = locations_list.locations[incoming.Hostname]
 						location.found_beacons = make(map[string]Found_beacon)
 						//fmt.Println(location.name + " new location so making found_beacons map")
 						location.name = incoming.Hostname
@@ -607,7 +619,9 @@ func main() {
 					location.lock.Lock()
 					location.found_beacons[this_beacon_id] = this_found
 					location.lock.Unlock()
-					locations[incoming.Hostname] = location
+					locations_list.lock.Lock()
+					locations_list.locations[incoming.Hostname] = location
+					locations_list.lock.Unlock()
 				},
 			},
 		},
@@ -617,7 +631,7 @@ func main() {
 	}
 
 	// create a thread for finding all the closest beacons
-	go getLikelyLocationsPoller(locations, cli)
+	go getLikelyLocationsPoller(locations_list, cli)
 
 	go startServer()
 
