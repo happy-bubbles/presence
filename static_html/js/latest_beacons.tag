@@ -53,13 +53,20 @@
 			var data = JSON.parse(evt.data);
 							
 			data.sort(function(a, b) {
-				return parseInt(a.last_seen) - parseInt(b.last_seen);
+				//return parseInt(a.last_seen) - parseInt(b.last_seen);
+				if(a.beacon_id < b.beacon_id) return -1;
+				if(a.beacon_id > b.beacon_id) return 1;
+				return 0;
 			});
 			//console.log("latest")
 			//console.log(data)
 			self.beacons = data.map(function(b)
 				{
 				if(b.beacon_type=="ibeacon") 
+				{
+					b.distance = Math.round(parseFloat(b.distance)*100)/100 +" meters";
+				}
+				else if(b.beacon_type=="eddystone") 
 				{
 					b.distance = Math.round(parseFloat(b.distance)*100)/100 +" meters";
 				}
@@ -122,7 +129,10 @@
 					//console.log(data)
 
 					data.sort(function(a, b) {
-						    return parseInt(a.last_seen) - parseInt(b.last_seen);
+						    //return parseInt(a.last_seen) - parseInt(b.last_seen);
+								if(a.beacon_id < b.beacon_id) return -1;
+								if(a.beacon_id > b.beacon_id) return 1;
+								return 0;
 					});
 					self.beacons = data
 					self.update()
