@@ -256,11 +256,9 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 		best_location := Best_location{}
 		//go through each location
 		now := time.Now().Unix()
-		locations_list.lock.RLock()
 		for _, location := range locations_list.locations {
 			//fmt.Printf("doing iteration and saw location %s\n", location_name)
 			// get last_seen for this location
-			location.lock.RLock()
 			found_b, ok := location.found_beacons[beacon.Beacon_id]
 			if ok {
 				//fmt.Printf("found %s in %s\n", beacon_id, location_name)
@@ -275,9 +273,7 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 					best_location = Best_location{name: location.name, distance: ldistance, last_seen: location.found_beacons[beacon.Beacon_id].last_seen}
 				}
 			}
-			location.lock.RUnlock()
 		}
-		locations_list.lock.RUnlock()
 
 		// debug stuff, show other candidates
 
@@ -343,7 +339,6 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 			// clear all previous entries of this beacon from all locations, except this best one
 			//log.Println("before clear")
 
-			locations_list.lock.RLock()
 			for k, location := range locations_list.locations {
 				log.Println(location.name, beacon.Name, len(location.found_beacons[beacon.Name].beacon_metrics))
 				if location.name == best_location.name {
@@ -356,9 +351,7 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 					locbeac.beacon_metrics = make([]Beacon_metric, 1)
 					location.found_beacons[beacon.Name] = locbeac
 				*/
-				locations_list.lock.Lock()
 				locations_list.locations[k] = location
-				locations_list.lock.Unlock()
 			}
 
 			/*
@@ -371,9 +364,7 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 
 		beacon.Previous_location = best_location.name
 
-		BEACONS.lock.Lock()
 		BEACONS.Beacons[beacon.Beacon_id] = beacon
-		BEACONS.lock.Unlock()
 
 		http_results_lock.Lock()
 		http_results.Results = append(http_results.Results, r)
@@ -408,24 +399,9 @@ func getLikelyLocationsPoller(locations_list Locations_list, cl *client.Client) 
 	}
 }
 
-var http_host_path_ptr *string
+func IncomingMQTTProcessor(updateInterval time.Duration, cl *client.Client, db *bolt.DB) chan<- Incoming_json {
 
-func main() {
-	http_host_path_ptr = flag.String("http_host_path", "localhost:5555", "The host:port that the HTTP server should listen on")
-
-	mqtt_host_ptr := flag.String("mqtt_host", "localhost:1883", "The host:port of the MQTT server to listen for Happy Bubbles beacons on")
-	mqtt_username_ptr := flag.String("mqtt_username", "none", "The username needed to connect to the MQTT server, 'none' if it doesn't need one")
-	mqtt_password_ptr := flag.String("mqtt_password", "none", "The password needed to connect to the MQTT server, 'none' if it doesn't need one")
-	mqtt_client_id_ptr := flag.String("mqtt_client_id", "happy-bubbles-presence-detector", "The client ID for the MQTT server")
-
-	flag.Parse()
-
-	//open the database
-	db, err = bolt.Open("presence.db", 0644, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
+	incoming_msgs_chan := make(chan Incoming_json, 10)
 
 	// load initial BEACONS
 	BEACONS.Beacons = make(map[string]Beacon)
@@ -477,11 +453,12 @@ func main() {
 
 	//debug list them out
 	/*
+		fmt.Println("Database beacons:")
 		for _, beacon := range BEACONS.Beacons {
 			fmt.Println("Database has known beacon: " + beacon.Beacon_id + " " + beacon.Name)
 		}
+		fmt.Println("Settings has %#v\n", settings)
 	*/
-	//fmt.Println("Settings has %#v\n", settings)
 
 	Latest_beacons_list = make(map[string]Beacon)
 
@@ -489,6 +466,114 @@ func main() {
 	locations_list := Locations_list{}
 	ls := make(map[string]Location)
 	locations_list.locations = ls
+
+	ticker := time.NewTicker(updateInterval)
+
+	go func() {
+		for {
+			select {
+
+			case <-ticker.C:
+				getLikelyLocations(settings.Last_seen_threshold, settings.Last_reading_threshold, locations_list, cl)
+			case incoming := <-incoming_msgs_chan:
+				this_beacon_id := getBeaconID(incoming)
+
+				now := time.Now().Unix()
+
+				//fmt.Println("saw " + this_beacon_id + " at " + incoming.Hostname)
+
+				//if this beacon isn't in our search list, add it to the latest_beacons pile.
+				beacon, ok := BEACONS.Beacons[this_beacon_id]
+				if !ok {
+					//should be unique
+					//if it's already in list, forget it.
+					latest_list_lock.Lock()
+					x, ok := Latest_beacons_list[this_beacon_id]
+					if ok {
+						//update its timestamp
+						x.Last_seen = now
+						x.Incoming_JSON = incoming
+						x.Distance = getBeaconDistance(incoming)
+						Latest_beacons_list[this_beacon_id] = x
+					} else {
+						Latest_beacons_list[this_beacon_id] = Beacon{Beacon_id: this_beacon_id, Beacon_type: incoming.Beacon_type, Last_seen: now, Incoming_JSON: incoming, Beacon_location: incoming.Hostname, Distance: getBeaconDistance(incoming)}
+					}
+					for k, v := range Latest_beacons_list {
+						if (now - v.Last_seen) > 10 { // 10 seconds
+							delete(Latest_beacons_list, k)
+						}
+					}
+					latest_list_lock.Unlock()
+					continue
+				}
+
+				beacon.Incoming_JSON = incoming
+				beacon.Last_seen = now
+				beacon.Beacon_type = incoming.Beacon_type
+				BEACONS.Beacons[beacon.Beacon_id] = beacon
+
+				//create metric for this beacon
+				this_metric := Beacon_metric{}
+				this_metric.distance = getBeaconDistance(incoming)
+				this_metric.timestamp = now
+
+				//lookup location by hostname in locations
+				location, ok := locations_list.locations[incoming.Hostname]
+				if !ok {
+					//create the location
+					locations_list.locations[incoming.Hostname] = Location{}
+					location, ok = locations_list.locations[incoming.Hostname]
+					location.found_beacons = make(map[string]Found_beacon)
+					//fmt.Println(location.name + " new location so making found_beacons map")
+					location.name = incoming.Hostname
+				}
+
+				//now look for our beacon in founds
+				this_found, ok := location.found_beacons[this_beacon_id]
+				if !ok {
+					//create this found beacon
+					this_found := Found_beacon{}
+					this_found.beacon_metrics = make([]Beacon_metric, 1)
+				}
+				this_found.beacon_id = this_beacon_id
+				this_found.last_seen = now
+				//add this metric to its metrics
+				this_found.beacon_metrics = append(this_found.beacon_metrics, this_metric)
+
+				//go through all the metrics in the location and get average
+				for i, metric := range this_found.beacon_metrics {
+					//if a reading is older than the threshold, remove it from calculations and list
+					if (now - metric.timestamp) > settings.Last_reading_threshold {
+						//x := len(this_found.beacon_metrics)
+						this_found.beacon_metrics = append(this_found.beacon_metrics[:i], this_found.beacon_metrics[i+1:]...)
+						//log.Println("removing metric from ", location.name, " and beacon ", this_found.beacon_id, "had ", x, " now has: ", len(this_found.beacon_metrics))
+					}
+				}
+
+				this_found.average_distance = getAverageDistance(this_found.beacon_metrics)
+				location.found_beacons[this_beacon_id] = this_found
+				locations_list.locations[incoming.Hostname] = location
+			}
+		}
+	}()
+
+	// create a thread for finding all the closest beacons
+	//go getLikelyLocationsPoller(locations_list, cl)
+
+	return incoming_msgs_chan
+}
+
+var http_host_path_ptr *string
+
+func main() {
+	http_host_path_ptr = flag.String("http_host_path", "localhost:5555", "The host:port that the HTTP server should listen on")
+
+	mqtt_host_ptr := flag.String("mqtt_host", "localhost:1883", "The host:port of the MQTT server to listen for Happy Bubbles beacons on")
+	mqtt_username_ptr := flag.String("mqtt_username", "none", "The username needed to connect to the MQTT server, 'none' if it doesn't need one")
+	mqtt_password_ptr := flag.String("mqtt_password", "none", "The password needed to connect to the MQTT server, 'none' if it doesn't need one")
+	mqtt_client_id_ptr := flag.String("mqtt_client_id", "happy-bubbles-presence-detector", "The client ID for the MQTT server")
+
+	flag.Parse()
 
 	// Set up channel on which to send signal notifications.
 	sigc := make(chan os.Signal, 1)
@@ -503,6 +588,13 @@ func main() {
 	})
 	// Terminate the Client.
 	defer cli.Terminate()
+
+	//open the database
+	db, err = bolt.Open("presence.db", 0644, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
 
 	// Connect to the MQTT Server.
 	err = cli.Connect(&client.ConnectOptions{
@@ -523,6 +615,8 @@ func main() {
 	fmt.Println("Visit http://" + *http_host_path_ptr + " on your browser to see the web interface")
 	fmt.Println("\n ")
 
+	incoming_updates_chan := IncomingMQTTProcessor(1*time.Second, cli, db)
+
 	// Subscribe to topics.
 	err = cli.Subscribe(&client.SubscribeOptions{
 		SubReqs: []*client.SubReq{
@@ -535,93 +629,8 @@ func main() {
 					incoming := Incoming_json{}
 					json.Unmarshal(message, &incoming)
 
-					this_beacon_id := getBeaconID(incoming)
-
-					now := time.Now().Unix()
-
-					//fmt.Println("saw " + this_beacon_id + " at " + incoming.Hostname)
-
-					//if this beacon isn't in our search list, add it to the latest_beacons pile.
-					BEACONS.lock.RLock()
-					beacon, ok := BEACONS.Beacons[this_beacon_id]
-					BEACONS.lock.RUnlock()
-					if !ok {
-						//should be unique
-						//if it's already in list, forget it.
-						latest_list_lock.Lock()
-						x, ok := Latest_beacons_list[this_beacon_id]
-						if ok {
-							//update its timestamp
-							x.Last_seen = now
-							x.Incoming_JSON = incoming
-							x.Distance = getBeaconDistance(incoming)
-							Latest_beacons_list[this_beacon_id] = x
-						} else {
-							Latest_beacons_list[this_beacon_id] = Beacon{Beacon_id: this_beacon_id, Beacon_type: incoming.Beacon_type, Last_seen: now, Incoming_JSON: incoming, Beacon_location: incoming.Hostname, Distance: getBeaconDistance(incoming)}
-						}
-						for k, v := range Latest_beacons_list {
-							if (now - v.Last_seen) > 10 { // 10 seconds
-								delete(Latest_beacons_list, k)
-							}
-						}
-						latest_list_lock.Unlock()
-						return
-					}
-
-					BEACONS.lock.Lock()
-					beacon.Incoming_JSON = incoming
-					beacon.Last_seen = now
-					beacon.Beacon_type = incoming.Beacon_type
-					BEACONS.Beacons[beacon.Beacon_id] = beacon
-					BEACONS.lock.Unlock()
-
-					//create metric for this beacon
-					this_metric := Beacon_metric{}
-					this_metric.distance = getBeaconDistance(incoming)
-					this_metric.timestamp = now
-
-					//lookup location by hostname in locations
-					location, ok := locations_list.locations[incoming.Hostname]
-					if !ok {
-						//create the location
-						locations_list.locations[incoming.Hostname] = Location{}
-						location, ok = locations_list.locations[incoming.Hostname]
-						location.found_beacons = make(map[string]Found_beacon)
-						//fmt.Println(location.name + " new location so making found_beacons map")
-						location.name = incoming.Hostname
-					}
-
-					//now look for our beacon in founds
-					location.lock.RLock()
-					this_found, ok := location.found_beacons[this_beacon_id]
-					location.lock.RUnlock()
-					if !ok {
-						//create this found beacon
-						this_found := Found_beacon{}
-						this_found.beacon_metrics = make([]Beacon_metric, 1)
-					}
-					this_found.beacon_id = this_beacon_id
-					this_found.last_seen = now
-					//add this metric to its metrics
-					this_found.beacon_metrics = append(this_found.beacon_metrics, this_metric)
-
-					//go through all the metrics in the location and get average
-					for i, metric := range this_found.beacon_metrics {
-						//if a reading is older than the threshold, remove it from calculations and list
-						if (now - metric.timestamp) > settings.Last_reading_threshold {
-							//x := len(this_found.beacon_metrics)
-							this_found.beacon_metrics = append(this_found.beacon_metrics[:i], this_found.beacon_metrics[i+1:]...)
-							//log.Println("removing metric from ", location.name, " and beacon ", this_found.beacon_id, "had ", x, " now has: ", len(this_found.beacon_metrics))
-						}
-					}
-
-					this_found.average_distance = getAverageDistance(this_found.beacon_metrics)
-					location.lock.Lock()
-					location.found_beacons[this_beacon_id] = this_found
-					location.lock.Unlock()
-					locations_list.lock.Lock()
-					locations_list.locations[incoming.Hostname] = location
-					locations_list.lock.Unlock()
+					//pass this to the state monitor
+					incoming_updates_chan <- incoming
 				},
 			},
 		},
@@ -629,9 +638,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	// create a thread for finding all the closest beacons
-	go getLikelyLocationsPoller(locations_list, cli)
 
 	go startServer()
 
