@@ -18,6 +18,14 @@ Here's some images of what it looks like
 
 ## How to set it up and use it
 
+### Download, install, and run
+
+The quickest and easiest way to get started is to download the latest release of the server from https://github.com/happy-bubbles/presence/releases and install it following the instructions. 
+
+There is also a tutorial for installing it to a Raspberry Pi here: https://www.happybubbles.tech/presence/docs/rpi3_setup/
+
+But if you want to do development on the system or install from source, take a look at the instructions below.
+
 #### 0. Compile it
 0. Go to releases and download the executable for your environment
 or
