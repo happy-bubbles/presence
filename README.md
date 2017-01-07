@@ -26,6 +26,8 @@ There is also a tutorial for installing it to a Raspberry Pi here: https://www.h
 
 But if you want to do development on the system or install from source, take a look at the instructions below.
 
+## Compile and install from source
+
 #### 0. Compile it
 0. Go to releases and download the executable for your environment
 or
