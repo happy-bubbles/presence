@@ -22,6 +22,12 @@
         </div>
       </div>
       <div class="row">
+        <div class="input-field col s12">
+          <input checked="{opts.ha_send_changes_only}" id="ha_send_changes_only" type="checkbox">
+          <label for="ha_send_changes_only" class="active">Only Send Changes in Location to Home Assistant<i class="material-icons tooltipped" data-position="right" data-tooltip="Only send changes to Home Assistant when the location of a beacon changes">help</i></label>
+        </div>
+      </div>
+      <div class="row">
 				<button class="btn waves-effect waves-light" type="submit" name="action">Submit
 		  		<i class="material-icons right">send</i>
 		   </button> 
@@ -50,6 +56,9 @@
 				if(data.last_seen_threshold) {
 					$("#last_seen_threshold").val(data.last_seen_threshold);
 				}
+				if(data.ha_send_changes_only) {
+					$("#ha_send_changes_only").prop("checked", data.ha_send_changes_only);
+				}
 			});
 
 			$("#settings-form").submit(function(event){
@@ -58,6 +67,7 @@
 				form_data["location_confidence"] = parseInt($("#location_confidence").val());
 				form_data["last_seen_threshold"] = parseInt($("#last_seen_threshold").val());
 				form_data["last_reading_threshold"] = parseInt($("#last_reading_threshold").val());
+				form_data["ha_send_changes_only"] = $("#ha_send_changes_only").prop("checked");
 				//console.log(form_data);
 				$.ajax(
 				{
