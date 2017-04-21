@@ -16,7 +16,7 @@
 			<td>{ name }</td>
 			<td>{ location }</td>
 			<td>{ moment(last_seen*1000).fromNow() }</td> 
-			<td><a href="#edit-beacon/{ beacon_id }/{ name }">Edit this beacon</a></td>
+			<td><a href="#edit-beacon/{ beacon_id }/{ url_name }">Edit this beacon</a></td>
 			<td><a onclick={ delete_beacon } beacon_name="{ beacon_name } "beacon_id="{ beacon_id }" href="">Delete this beacon</a></td>
     </tr>
   </table>
@@ -42,6 +42,7 @@
 					var bs = []
 					$.each(data, function(k, v) {
 								if(v && v.location != "") {
+									v["url_name"] = encodeURIComponent(v.name);
 									bs.push(v);
 								}
 					});
@@ -57,6 +58,7 @@
 							
 			$.each(msg, function(k, v) {
 				if(v && v.location != "") {
+					v["url_name"] = encodeURIComponent(v.name);
 					bs.push(v);
 				}
 			});

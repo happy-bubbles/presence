@@ -11,7 +11,7 @@
       </div>
       <div class="row">
         <div class="input-field col s12">
-          <input id="beacon_name" value="{opts.beacon_name}" minlength=1 type="text" class="validate">
+          <input id="beacon_name" value="{decodeURIComponent(opts.beacon_name)}" minlength=1 type="text" class="validate">
           <label for="beacon_name" class="active" data-error="wrong" data-success="ok">Beacon name</label>
         </div>
       </div>
