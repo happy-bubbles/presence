@@ -3,6 +3,8 @@ rm -rf out
 mkdir out
 cp -rf static_html out/
 
+cp VERSION out/static_html/
+
 build_os_arch ()
 {
 	OS="$1"
