@@ -80,7 +80,6 @@
 										v.class = "grey-text text-darken-1"
 									}
 									v["url_name"] = encodeURIComponent(v.name);
-									bs.push(v);
 									console.log(v)
 									if(v.beacon_type == "hb_button")
 									{
@@ -91,10 +90,15 @@
 										else 
 										{
 											v.hb_button_mode = "Presence & Button";
+											bs.push(v);
 										}
 										v.hb_button_battery_percent = Math.floor((v.hb_button_battery / 3021)*100)+"%";
 										v.hb_button_battery = (v.hb_button_battery / 1000).toFixed(2);
 										btns.push(v);
+									}
+									else 
+									{
+										bs.push(v);
 									}
 								}
 					});
@@ -122,7 +126,6 @@
 						v.class = "grey-text text-darken-1"
 					}
 					v["url_name"] = encodeURIComponent(v.name);
-					bs.push(v);
 					if(v.beacon_type == "hb_button")
 					{
 						if(v.hb_button_mode == "button_only")
@@ -132,10 +135,15 @@
 						else 
 						{
 							v.hb_button_mode = "Presence & Button";
+							bs.push(v);
 						}
 						v.hb_button_battery_percent = Math.floor((v.hb_button_battery / 3021)*100)+"%";
 						v.hb_button_battery = (v.hb_button_battery / 1000).toFixed(2);
 						btns.push(v);
+					}
+					else 
+					{
+						bs.push(v);
 					}
 				}
 			});
