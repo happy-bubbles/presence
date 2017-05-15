@@ -200,8 +200,8 @@ func getBeaconID(incoming Incoming_json) string {
 func incomingBeaconFilter(incoming Incoming_json) Incoming_json {
 	out_json := incoming
 	if incoming.Beacon_type != "ibeacon" && incoming.Beacon_type != "eddystone" && incoming.Beacon_type != "hb_button" {
-		//TODO: do additional checks here to detect if a Habby Bubbles Button
-		// looks like 020104020a0011ff045600012d3859db59e1000b9453"
+		//do additional checks here to detect if a Habby Bubbles Button
+		// looks like 020104020a0011ff045600012d3859db59e1000b9453
 
 		raw_data := incoming.Data
 		company_id := []byte{0x04, 0x56}
@@ -211,7 +211,7 @@ func incomingBeaconFilter(incoming Incoming_json) Incoming_json {
 			out_json.Namespace = "ddddeeeeeeffff5544ff"
 			out_json.Instance_id = raw_data[24:36]
 
-			//TODO: do MUUUCH better error handling here
+			//TODO: do MUCH better error handling here
 
 			counter_str := fmt.Sprintf("0x%s", raw_data[36:38])
 			counter, _ := strconv.ParseInt(counter_str, 0, 64)
@@ -229,7 +229,7 @@ func incomingBeaconFilter(incoming Incoming_json) Incoming_json {
 			} else {
 				out_json.HB_ButtonMode = "button_only"
 			}
-			out_json.TX_power = fmt.Sprintf("%02x%02x", raw_data[46:48])
+			out_json.TX_power = fmt.Sprintf("0x%s", raw_data[46:48])
 
 			out_json.Beacon_type = "hb_button"
 

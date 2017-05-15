@@ -16,10 +16,36 @@
 			<td class="{ class }">{ name }</td>
 			<td class="{ class }">{ location }</td>
 			<td class="{ class }">{ last_seen_string }</td> 
-			<td><a href="#edit-beacon/{ beacon_id }/{ url_name }">Edit this beacon</a></td>
-			<td><a onclick={ delete_beacon } beacon_name="{ beacon_name } "beacon_id="{ beacon_id }" href="">Delete this beacon</a></td>
+			<td><a href="#edit-beacon/{ beacon_id }/{ url_name }"><i class="material-icons text-blue">edit</i></a></td>
+			<td><a onclick={ delete_beacon } beacon_name="{ beacon_name } "beacon_id="{ beacon_id }" href=""><i class="material-icons red-text">delete</i></a></td>
     </tr>
   </table>
+
+	<h2>Added Buttons</h2>
+
+  <table>
+		<tr>
+			<th>Button ID</th>
+			<th>Button Name</th>
+			<th>Current Location</th>
+			<th>Last seen</th>
+			<th>Battery</th>
+			<th>Mode</th>
+			<th>Edit</th>
+			<th>Delete</th>
+		</tr>
+    <tr each={ buttons }>
+			<td class="{ class }">{ id }</td>
+			<td class="{ class }">{ name }</td>
+			<td class="{ class }">{ location }</td>
+			<td class="{ class }">{ last_seen_string }</td> 
+			<td class="{ class }">{ battery }</td> 
+			<td class="{ class }">{ mode }</td> 
+			<td><a href="#edit-button/{ button_id }/{ url_name }">Edit this button</a></td>
+			<td><a onclick={ delete_button } beacon_name="{ button_name } "button_id="{ button_id }" href="">Delete this button</a></td>
+    </tr>
+  </table>
+
 
 	<br />
 	<a id="refresh" onclick={ refreshList } class="btn-floating btn-large waves-effect waves-light red"><i class="material-icons">refresh</i></a>

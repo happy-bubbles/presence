@@ -21,7 +21,7 @@
 			<td if={beacon_type != ""} >{ beacon_type }</td>
 			<td>{ moment(last_seen*1000).fromNow() }</td> 
 			<td if={distance != ""} >{ distance }</td>
-			<td><a href="#add-beacon/{ beacon_id }">Add this beacon</a></td>
+			<td><a href="#add-beacon/{ beacon_id }">{ add_label }</a></td>
     </tr>
   </table>
 
@@ -43,6 +43,33 @@
 			ws_proto = "wss"
 		}
 
+		var list_filter = function(data) {
+			var beacons = data.map(function(b)
+				{
+					b.add_label = "Add this beacon";
+				if(b.beacon_type=="ibeacon") 
+				{
+					b.distance = Math.round(parseFloat(b.distance)*100)/100 +" meters";
+				}
+				else if(b.beacon_type=="eddystone") 
+				{
+					b.distance = Math.round(parseFloat(b.distance)*100)/100 +" meters";
+				}
+				else if(b.beacon_type=="hb_button") 
+				{
+					b.distance = Math.round(parseFloat(b.distance)*100)/100 +" meters";
+					b.add_label = "Add this button";
+				}
+				else 
+				{
+					b.distance = "-"+b.distance+ " db";
+				}
+				return b;
+			});
+
+			return beacons;
+		};
+
 		var onmessage = function (evt) 
 		{
 			if(paused)
@@ -60,22 +87,7 @@
 			});
 			//console.log("latest")
 			//console.log(data)
-			self.beacons = data.map(function(b)
-				{
-				if(b.beacon_type=="ibeacon") 
-				{
-					b.distance = Math.round(parseFloat(b.distance)*100)/100 +" meters";
-				}
-				else if(b.beacon_type=="eddystone") 
-				{
-					b.distance = Math.round(parseFloat(b.distance)*100)/100 +" meters";
-				}
-				else 
-				{
-					b.distance = "-"+b.distance+ " db";
-				}
-				return b;
-			});
+			self.beacons = list_filter(data);
 			self.update();
 		};
 				
@@ -134,7 +146,7 @@
 								if(a.beacon_id > b.beacon_id) return 1;
 								return 0;
 					});
-					self.beacons = data
+					self.beacons = list_filter(data);
 					self.update()
 			});
 		}
