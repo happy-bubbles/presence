@@ -99,12 +99,15 @@ type Best_location struct {
 }
 
 type HTTP_location struct {
-	Distance    float64 `json:"distance"`
-	Name        string  `json:"name"`
-	Beacon_name string  `json:"beacon_name"`
-	Beacon_id   string  `json:"beacon_id"`
-	Location    string  `json:"location"`
-	Last_seen   int64   `json:"last_seen"`
+	Distance      float64 `json:"distance"`
+	Name          string  `json:"name"`
+	Beacon_name   string  `json:"beacon_name"`
+	Beacon_id     string  `json:"beacon_id"`
+	Beacon_type   string  `json:"beacon_type"`
+	HB_Battery    int64   `json:"hb_button_battery"`
+	HB_ButtonMode string  `json:"hb_button_mode"`
+	Location      string  `json:"location"`
+	Last_seen     int64   `json:"last_seen"`
 }
 
 type Location_change struct {
@@ -137,6 +140,11 @@ type Beacon struct {
 	Previous_location           string
 	Previous_confident_location string
 	Location_confidence         int64
+
+	HB_ButtonCounter int64  `json:"hb_button_counter"`
+	HB_Battery       int64  `json:"hb_button_battery"`
+	HB_RandomNonce   string `json:"hb_button_random"`
+	HB_ButtonMode    string `json:"hb_button_mode"`
 }
 
 type Beacons_list struct {
@@ -361,6 +369,9 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 		r.Name = beacon.Name
 		r.Beacon_name = beacon.Name
 		r.Beacon_id = beacon.Beacon_id
+		r.Beacon_type = beacon.Beacon_type
+		r.HB_Battery = beacon.HB_Battery
+		r.HB_ButtonMode = beacon.HB_ButtonMode
 		r.Location = best_location.name
 		r.Last_seen = best_location.last_seen
 
@@ -563,6 +574,7 @@ func IncomingMQTTProcessor(updateInterval time.Duration, cl *client.Client, db *
 							x.Last_seen = now
 							x.Incoming_JSON = incoming
 							x.Distance = getBeaconDistance(incoming)
+
 							Latest_beacons_list[this_beacon_id] = x
 						} else {
 							Latest_beacons_list[this_beacon_id] = Beacon{Beacon_id: this_beacon_id, Beacon_type: incoming.Beacon_type, Last_seen: now, Incoming_JSON: incoming, Beacon_location: incoming.Hostname, Distance: getBeaconDistance(incoming)}
@@ -580,6 +592,10 @@ func IncomingMQTTProcessor(updateInterval time.Duration, cl *client.Client, db *
 					beacon.Incoming_JSON = incoming
 					beacon.Last_seen = now
 					beacon.Beacon_type = incoming.Beacon_type
+					beacon.HB_ButtonCounter = incoming.HB_ButtonCounter
+					beacon.HB_Battery = incoming.HB_Battery
+					beacon.HB_RandomNonce = incoming.HB_RandomNonce
+					beacon.HB_ButtonMode = incoming.HB_ButtonMode
 					BEACONS.Beacons[beacon.Beacon_id] = beacon
 
 					//create metric for this beacon

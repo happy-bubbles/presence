@@ -35,14 +35,14 @@
 			<th>Delete</th>
 		</tr>
     <tr each={ buttons }>
-			<td class="{ class }">{ id }</td>
+			<td class="{ class }">{ beacon_id }</td>
 			<td class="{ class }">{ name }</td>
 			<td class="{ class }">{ location }</td>
 			<td class="{ class }">{ last_seen_string }</td> 
-			<td class="{ class }">{ battery }</td> 
-			<td class="{ class }">{ mode }</td> 
-			<td><a href="#edit-button/{ button_id }/{ url_name }">Edit this button</a></td>
-			<td><a onclick={ delete_button } beacon_name="{ button_name } "button_id="{ button_id }" href="">Delete this button</a></td>
+			<td class="{ class } tooltipped" data-position="top" data-delay="20" data-tooltip="{ hb_button_battery } V">{ hb_button_battery_percent }</td> 
+			<td class="{ class }">{ hb_button_mode }</td> 
+			<td><a href="#edit-beacon/{ beacon_id }/{ url_name }"><i class="material-icons text-blue">edit</i></a></td>
+			<td><a onclick={ delete_beacon } beacon_name="{ beacon_name } "beacon_id="{ beacon_id }" href=""><i class="material-icons red-text">delete</i></a></td>
     </tr>
   </table>
 
@@ -52,6 +52,9 @@
 
   <script>
     this.beacons = opts.beacons
+    this.buttons = opts.buttons
+
+		$('.tooltipped').tooltip({delay: 20});
 
 		var self = this;
 		var ws;
@@ -66,6 +69,7 @@
 		refreshList() {
 			$.getJSON( "api/results", function( data ) {
 					var bs = []
+					var btns = []
 					$.each(data, function(k, v) {
 								if(v) {
 									v.last_seen_string = moment(v.last_seen*1000).fromNow() 
@@ -77,10 +81,28 @@
 									}
 									v["url_name"] = encodeURIComponent(v.name);
 									bs.push(v);
+									console.log(v)
+									if(v.beacon_type == "hb_button")
+									{
+										if(v.hb_button_mode == "button_only")
+										{
+											v.hb_button_mode = "Button Only";
+										}
+										else 
+										{
+											v.hb_button_mode = "Presence & Button";
+										}
+										v.hb_button_battery_percent = Math.floor((v.hb_button_battery / 3021)*100)+"%";
+										v.hb_button_battery = (v.hb_button_battery / 1000).toFixed(2);
+										btns.push(v);
+									}
 								}
 					});
 					self.beacons = bs;
+					self.buttons = btns;
 					self.update();
+					$('.material-tooltip').remove();
+					$('.tooltipped').tooltip({delay: 20});
 			});
 		}
 
@@ -88,6 +110,7 @@
 		{
 			var msg = JSON.parse(evt.data);
 			bs = [];
+			btns = [];
 							
 			$.each(msg, function(k, v) {
 				if(v) {
@@ -100,12 +123,29 @@
 					}
 					v["url_name"] = encodeURIComponent(v.name);
 					bs.push(v);
+					if(v.beacon_type == "hb_button")
+					{
+						if(v.hb_button_mode == "button_only")
+						{
+							v.hb_button_mode = "Button Only";
+						}
+						else 
+						{
+							v.hb_button_mode = "Presence & Button";
+						}
+						v.hb_button_battery_percent = Math.floor((v.hb_button_battery / 3021)*100)+"%";
+						v.hb_button_battery = (v.hb_button_battery / 1000).toFixed(2);
+						btns.push(v);
+					}
 				}
 			});
 				
 			//console.log(bs);
 			self.beacons = bs;
+			self.buttons = btns;
 			self.update();
+			$('.material-tooltip').remove();
+			$('.tooltipped').tooltip({delay: 20});
 		};
 				
 		var onopen = function()
