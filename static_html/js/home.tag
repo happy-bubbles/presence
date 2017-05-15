@@ -89,7 +89,7 @@
 										}
 										else 
 										{
-											v.hb_button_mode = "Presence & Button";
+											v.hb_button_mode = "Beacon & Button";
 											bs.push(v);
 										}
 										v.hb_button_battery_percent = Math.floor((v.hb_button_battery / 3021)*100)+"%";
@@ -134,7 +134,7 @@
 						}
 						else 
 						{
-							v.hb_button_mode = "Presence & Button";
+							v.hb_button_mode = "Beacon & Button";
 							bs.push(v);
 						}
 						v.hb_button_battery_percent = Math.floor((v.hb_button_battery / 3021)*100)+"%";
