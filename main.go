@@ -147,6 +147,20 @@ type Beacon struct {
 	HB_ButtonMode    string `json:"hb_button_mode"`
 }
 
+type Button struct {
+	Name            string        `json:"name"`
+	Button_id       string        `json:"button_id"`
+	Button_type     string        `json:"button_type"`
+	Button_location string        `json:"button_location"`
+	Incoming_JSON   Incoming_json `json:"incoming_json"`
+	Distance        float64       `json:"distance"`
+
+	HB_ButtonCounter int64  `json:"hb_button_counter"`
+	HB_Battery       int64  `json:"hb_button_battery"`
+	HB_RandomNonce   string `json:"hb_button_random"`
+	HB_ButtonMode    string `json:"hb_button_mode"`
+}
+
 type Beacons_list struct {
 	Beacons map[string]Beacon `json:"beacons"`
 	lock    sync.RWMutex
@@ -160,6 +174,8 @@ type Locations_list struct {
 // GLOBALS
 
 var BEACONS Beacons_list
+
+var Button_nonces map[string]string
 
 var cli *client.Client
 
@@ -248,6 +264,26 @@ func incomingBeaconFilter(incoming Incoming_json) Incoming_json {
 	return out_json
 }
 
+func processButton(bbeacon Beacon, cl *client.Client) {
+	btn := Button{Name: bbeacon.Name}
+	btn.Button_id = bbeacon.Beacon_id
+	btn.Button_type = bbeacon.Beacon_type
+	btn.Button_location = bbeacon.Beacon_location
+	btn.Incoming_JSON = bbeacon.Incoming_JSON
+	btn.Distance = bbeacon.Distance
+	btn.HB_ButtonCounter = bbeacon.HB_ButtonCounter
+	btn.HB_Battery = bbeacon.HB_Battery
+	btn.HB_RandomNonce = bbeacon.HB_RandomNonce
+	btn.HB_ButtonMode = bbeacon.HB_ButtonMode
+
+	nonce, ok := Button_nonces[btn.Button_id]
+	if !ok || nonce != btn.HB_RandomNonce {
+		// send the button message to MQTT
+		sendButtonMessage(btn, cl)
+	}
+	Button_nonces[btn.Button_id] = btn.HB_RandomNonce
+}
+
 func getiBeaconDistance(rssi int64, power string) float64 {
 	ratio := float64(rssi) * (1.0 / float64(twos_comp(power)))
 	distance := 100.0
@@ -297,6 +333,24 @@ func sendHARoomMessage(beacon_id string, beacon_name string, distance float64, l
 		QoS:       mqtt.QoS1,
 		TopicName: []byte("happy-bubbles/presence/ha/" + location),
 		Message:   ha_msg,
+	})
+	if err != nil {
+		panic(err)
+	}
+}
+
+func sendButtonMessage(btn Button, cl *client.Client) {
+	//first make the json
+	btn_msg, err := json.Marshal(btn)
+	if err != nil {
+		panic(err)
+	}
+
+	//send the message to HA
+	err = cl.Publish(&client.PublishOptions{
+		QoS:       mqtt.QoS1,
+		TopicName: []byte("happy-bubbles/presence/button/" + btn.Button_id),
+		Message:   btn_msg,
 	})
 	if err != nil {
 		panic(err)
@@ -534,6 +588,8 @@ func IncomingMQTTProcessor(updateInterval time.Duration, cl *client.Client, db *
 
 	Latest_beacons_list = make(map[string]Beacon)
 
+	Button_nonces = make(map[string]string)
+
 	//create a map of locations, looked up by hostnames
 	locations_list := Locations_list{}
 	ls := make(map[string]Location)
@@ -597,6 +653,10 @@ func IncomingMQTTProcessor(updateInterval time.Duration, cl *client.Client, db *
 					beacon.HB_RandomNonce = incoming.HB_RandomNonce
 					beacon.HB_ButtonMode = incoming.HB_ButtonMode
 					BEACONS.Beacons[beacon.Beacon_id] = beacon
+
+					if beacon.Beacon_type == "hb_button" {
+						processButton(beacon, cl)
+					}
 
 					//create metric for this beacon
 					this_metric := Beacon_metric{}
