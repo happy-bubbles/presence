@@ -17,7 +17,7 @@
 			<td class="{ class }">{ location }</td>
 			<td class="{ class }">{ last_seen_string }</td> 
 			<td><a href="#edit-beacon/{ beacon_id }/{ url_name }"><i class="material-icons text-blue">edit</i></a></td>
-			<td><a onclick={ delete_beacon } beacon_name="{ beacon_name } "beacon_id="{ beacon_id }" href=""><i class="material-icons red-text">delete</i></a></td>
+			<td><a onclick={ delete_beacon } beacon_name="{ beacon_name }" beacon_id="{ beacon_id }" href=""><i class="material-icons red-text">delete</i></a></td>
     </tr>
   </table>
 
@@ -35,14 +35,14 @@
 			<th>Delete</th>
 		</tr>
     <tr each={ buttons }>
-			<td class="{ class }">{ beacon_id }</td>
+			<td class="{ class }">{ button_id }</td>
 			<td class="{ class }">{ name }</td>
-			<td class="{ class }">{ location }</td>
+			<td class="{ class }">{ button_location }</td>
 			<td class="{ class }">{ last_seen_string }</td> 
 			<td class="{ class } tooltipped" data-position="top" data-delay="20" data-tooltip="{ hb_button_battery } V">{ hb_button_battery_percent }</td> 
 			<td class="{ class }">{ hb_button_mode }</td> 
-			<td><a href="#edit-beacon/{ beacon_id }/{ url_name }"><i class="material-icons text-blue">edit</i></a></td>
-			<td><a onclick={ delete_beacon } beacon_name="{ beacon_name } "beacon_id="{ beacon_id }" href=""><i class="material-icons red-text">delete</i></a></td>
+			<td><a href="#edit-beacon/{ button_id }/{ url_name }"><i class="material-icons text-blue">edit</i></a></td>
+			<td><a onclick={ delete_button } beacon_name="{ name }" beacon_id="{ button_id }" href=""><i class="material-icons red-text">delete</i></a></td>
     </tr>
   </table>
 
@@ -70,7 +70,7 @@
 			$.getJSON( "api/results", function( data ) {
 					var bs = []
 					var btns = []
-					$.each(data, function(k, v) {
+					$.each(data.beacons, function(k, v) {
 								if(v) {
 									v.last_seen_string = moment(v.last_seen*1000).fromNow() 
 									if(v.location == "")
@@ -80,28 +80,41 @@
 										v.class = "grey-text text-darken-1"
 									}
 									v["url_name"] = encodeURIComponent(v.name);
-									console.log(v)
-									if(v.beacon_type == "hb_button")
+									bs.push(v);
+								}
+					});
+					$.each(data.buttons, function(k, v) {
+								if(v) {
+									v.last_seen_string = moment(v.last_seen*1000).fromNow() 
+									if(v.location == "")
 									{
-										if(v.hb_button_mode == "button_only")
-										{
-											v.hb_button_mode = "Button Only";
-										}
-										else 
-										{
-											v.hb_button_mode = "Beacon & Button";
-											bs.push(v);
-										}
-										v.hb_button_battery_percent = Math.floor((v.hb_button_battery / 3021)*100)+"%";
-										v.hb_button_battery = (v.hb_button_battery / 1000).toFixed(2);
-										btns.push(v);
+										v.location = "Not Found"
+										v.last_seen_string = " - "
+										v.class = "grey-text text-darken-1"
+									}
+									v["url_name"] = encodeURIComponent(v.name);
+									if(v.hb_button_mode == "button_only")
+									{
+										v.hb_button_mode = "Button Only";
 									}
 									else 
 									{
-										bs.push(v);
+										v.hb_button_mode = "Beacon & Button";
 									}
+									if(v.hb_button_battery != "")
+									{
+										v.hb_button_battery_percent = Math.floor((v.hb_button_battery / 3021)*100)+"%";
+										v.hb_button_battery = (v.hb_button_battery / 1000).toFixed(2);
+									}
+									else 
+									{
+										v.hb_button_battery_percent = "n/a";
+										v.hb_button_battery = "n/a";
+									}
+									btns.push(v);
 								}
 					});
+
 					self.beacons = bs;
 					self.buttons = btns;
 					self.update();
@@ -112,43 +125,54 @@
 
 		var onmessage = function (evt) 
 		{
-			var msg = JSON.parse(evt.data);
+			var data = JSON.parse(evt.data);
 			bs = [];
 			btns = [];
 							
-			$.each(msg, function(k, v) {
-				if(v) {
-				  v.last_seen_string = moment(v.last_seen*1000).fromNow() 
-					if(v.location == "")
-					{
-						v.location = "Not Found"
-						v.last_seen_string = " - "
-						v.class = "grey-text text-darken-1"
-					}
-					v["url_name"] = encodeURIComponent(v.name);
-					if(v.beacon_type == "hb_button")
-					{
-						if(v.hb_button_mode == "button_only")
+			$.each(data.beacons, function(k, v) {
+					if(v) {
+						v.last_seen_string = moment(v.last_seen*1000).fromNow() 
+						if(v.location == "")
 						{
-							v.hb_button_mode = "Button Only";
+							v.location = "Not Found"
+							v.last_seen_string = " - "
+							v.class = "grey-text text-darken-1"
 						}
-						else 
-						{
-							v.hb_button_mode = "Beacon & Button";
-							bs.push(v);
-						}
-						v.hb_button_battery_percent = Math.floor((v.hb_button_battery / 3021)*100)+"%";
-						v.hb_button_battery = (v.hb_button_battery / 1000).toFixed(2);
-						btns.push(v);
-					}
-					else 
-					{
+						v["url_name"] = encodeURIComponent(v.name);
 						bs.push(v);
-					}
-				}
-			});
-				
-			//console.log(bs);
+						}
+					});
+				$.each(data.buttons, function(k, v) {
+						if(v) {
+							v.last_seen_string = moment(v.last_seen*1000).fromNow() 
+							if(v.location == "")
+							{
+								v.location = "Not Found"
+								v.last_seen_string = " - "
+								v.class = "grey-text text-darken-1"
+							}
+							v["url_name"] = encodeURIComponent(v.name);
+							if(v.hb_button_mode == "button_only")
+							{
+								v.hb_button_mode = "Button Only";
+							}
+							else 
+							{
+								v.hb_button_mode = "Beacon & Button";
+							}
+							if(v.hb_button_battery != "")
+							{
+								v.hb_button_battery_percent = Math.floor((v.hb_button_battery / 3021)*100)+"%";
+								v.hb_button_battery = (v.hb_button_battery / 1000).toFixed(2);
+							}
+							else 
+							{
+								v.hb_button_battery_percent = "n/a";
+								v.hb_button_battery = "n/a";
+							}
+							btns.push(v);
+						}
+					});				
 			self.beacons = bs;
 			self.buttons = btns;
 			self.update();
@@ -198,6 +222,25 @@
 					return false;
 				}
 				var beacon_id = $(this).attr("beacon_id");
+				$.ajax(
+				{
+					url: "api/beacons/"+beacon_id,
+					type: "DELETE",
+				})
+				.done(function(data) {
+					window.location.hash = '#home';
+				});
+
+				return false;
+		};
+
+	delete_button = function() {
+				var beacon_id = $(this).attr("button_id");
+				var name = $(this).attr("name");
+				var confirmed = confirm("Are you sure you want to delete the '"+name+"' button?");
+				if(confirmed !== true)  {
+					return false;
+				}
 				$.ajax(
 				{
 					url: "api/beacons/"+beacon_id,

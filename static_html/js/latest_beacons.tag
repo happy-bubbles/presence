@@ -54,11 +54,16 @@
 				else if(b.beacon_type=="eddystone") 
 				{
 					b.distance = Math.round(parseFloat(b.distance)*100)/100 +" meters";
+					if(b.incoming_json.namespace == "ddddeeeeeeffff5544ff")
+					{
+						b.beacon_type = "HB Button";
+					}
 				}
 				else if(b.beacon_type=="hb_button") 
 				{
 					b.distance = Math.round(parseFloat(b.distance)*100)/100 +" meters";
 					b.add_label = "Add this button";
+					b.beacon_type = "HB Button"
 				}
 				else 
 				{

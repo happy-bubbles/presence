@@ -126,7 +126,8 @@ type HA_message struct {
 }
 
 type HTTP_locations_list struct {
-	Results []HTTP_location `json:"results"`
+	Beacons []HTTP_location `json:"beacons"`
+	Buttons []Button        `json:"buttons"`
 }
 
 type Beacon struct {
@@ -154,6 +155,7 @@ type Button struct {
 	Button_location string        `json:"button_location"`
 	Incoming_JSON   Incoming_json `json:"incoming_json"`
 	Distance        float64       `json:"distance"`
+	Last_seen       int64         `json:"last_seen"`
 
 	HB_ButtonCounter int64  `json:"hb_button_counter"`
 	HB_Battery       int64  `json:"hb_button_battery"`
@@ -175,7 +177,7 @@ type Locations_list struct {
 
 var BEACONS Beacons_list
 
-var Button_nonces map[string]string
+var Buttons_list map[string]Button
 
 var cli *client.Client
 
@@ -260,7 +262,9 @@ func incomingBeaconFilter(incoming Incoming_json) Incoming_json {
 			//debug
 			fmt.Println("Button adv has %#v\n", out_json)
 		}
-	}
+	} //else if incoming.Beacon_type == "eddystone" && incoming.Namespace == "ddddeeeeeeffff5544ff" {
+	//out_json.Beacon_type = "hb_button"
+	//}
 	return out_json
 }
 
@@ -268,20 +272,21 @@ func processButton(bbeacon Beacon, cl *client.Client) {
 	btn := Button{Name: bbeacon.Name}
 	btn.Button_id = bbeacon.Beacon_id
 	btn.Button_type = bbeacon.Beacon_type
-	btn.Button_location = bbeacon.Beacon_location
+	btn.Button_location = bbeacon.Previous_location
 	btn.Incoming_JSON = bbeacon.Incoming_JSON
 	btn.Distance = bbeacon.Distance
+	btn.Last_seen = bbeacon.Last_seen
 	btn.HB_ButtonCounter = bbeacon.HB_ButtonCounter
 	btn.HB_Battery = bbeacon.HB_Battery
 	btn.HB_RandomNonce = bbeacon.HB_RandomNonce
 	btn.HB_ButtonMode = bbeacon.HB_ButtonMode
 
-	nonce, ok := Button_nonces[btn.Button_id]
-	if !ok || nonce != btn.HB_RandomNonce {
+	nonce, ok := Buttons_list[btn.Button_id]
+	if !ok || nonce.HB_RandomNonce != btn.HB_RandomNonce {
 		// send the button message to MQTT
 		sendButtonMessage(btn, cl)
 	}
-	Button_nonces[btn.Button_id] = btn.HB_RandomNonce
+	Buttons_list[btn.Button_id] = btn
 }
 
 func getiBeaconDistance(rssi int64, power string) float64 {
@@ -361,7 +366,8 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 	// create the http results structure
 	http_results_lock.Lock()
 	http_results = HTTP_locations_list{}
-	http_results.Results = make([]HTTP_location, 0)
+	http_results.Beacons = make([]HTTP_location, 0)
+	http_results.Buttons = make([]Button, 0)
 	http_results_lock.Unlock()
 
 	should_persist := false
@@ -491,7 +497,7 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 		BEACONS.Beacons[beacon.Beacon_id] = beacon
 
 		http_results_lock.Lock()
-		http_results.Results = append(http_results.Results, r)
+		http_results.Beacons = append(http_results.Beacons, r)
 		http_results_lock.Unlock()
 
 		if best_location.name != "" {
@@ -511,6 +517,10 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 		if err != nil {
 			panic(err)
 		}
+	}
+
+	for _, button := range Buttons_list {
+		http_results.Buttons = append(http_results.Buttons, button)
 	}
 
 	if should_persist {
@@ -559,6 +569,17 @@ func IncomingMQTTProcessor(updateInterval time.Duration, cl *client.Client, db *
 			}
 		}
 
+		key = []byte("buttons_list")
+		val = bucket.Get(key)
+		if val != nil {
+			buf := bytes.NewBuffer(val)
+			dec := gob.NewDecoder(buf)
+			err = dec.Decode(&Buttons_list)
+			if err != nil {
+				log.Fatal("decode error:", err)
+			}
+		}
+
 		key = []byte("settings")
 		val = bucket.Get(key)
 		if val != nil {
@@ -588,7 +609,7 @@ func IncomingMQTTProcessor(updateInterval time.Duration, cl *client.Client, db *
 
 	Latest_beacons_list = make(map[string]Beacon)
 
-	Button_nonces = make(map[string]string)
+	Buttons_list = make(map[string]Button)
 
 	//create a map of locations, looked up by hostnames
 	locations_list := Locations_list{}
@@ -829,7 +850,7 @@ func startServer() {
 
 func resultsHandler(w http.ResponseWriter, r *http.Request) {
 	http_results_lock.RLock()
-	js, err := json.Marshal(http_results.Results)
+	js, err := json.Marshal(http_results)
 	http_results_lock.RUnlock()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -851,16 +872,6 @@ func beaconsListHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(js)
 }
 
-func beaconsEditHandler(w http.ResponseWriter, r *http.Request) {
-	js, err := json.Marshal(http_results.Results)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Write(js)
-}
-
 func persistBeacons() error {
 	// gob it first
 	buf := &bytes.Buffer{}
@@ -870,6 +881,31 @@ func persistBeacons() error {
 	}
 
 	key := []byte("beacons_list")
+	// store some data
+	err = db.Update(func(tx *bolt.Tx) error {
+		bucket, err := tx.CreateBucketIfNotExists(world)
+		if err != nil {
+			return err
+		}
+
+		err = bucket.Put(key, []byte(buf.String()))
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	return nil
+}
+
+func persistButtons() error {
+	// gob it first
+	buf := &bytes.Buffer{}
+	enc := gob.NewEncoder(buf)
+	if err := enc.Encode(Buttons_list); err != nil {
+		return err
+	}
+
+	key := []byte("buttons_list")
 	// store some data
 	err = db.Update(func(tx *bolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists(world)
@@ -941,6 +977,11 @@ func beaconsDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	beacon_id := vars["beacon_id"]
 	delete(BEACONS.Beacons, beacon_id)
+
+	_, ok := Buttons_list[beacon_id]
+	if ok {
+		delete(Buttons_list, beacon_id)
+	}
 
 	err := persistBeacons()
 	if err != nil {
@@ -1032,7 +1073,7 @@ func writer(ws *websocket.Conn) {
 		case <-beaconTicker.C:
 
 			http_results_lock.RLock()
-			js, err := json.Marshal(http_results.Results)
+			js, err := json.Marshal(http_results)
 			http_results_lock.RUnlock()
 
 			if err != nil {
