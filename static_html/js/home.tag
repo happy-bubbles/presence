@@ -25,7 +25,6 @@
 
   <table>
 		<tr>
-			<th>Button ID</th>
 			<th>Button Name</th>
 			<th>Current Location</th>
 			<th>Last seen</th>
@@ -35,8 +34,7 @@
 			<th>Delete</th>
 		</tr>
     <tr each={ buttons }>
-			<td class="{ class }">{ button_id }</td>
-			<td class="{ class }">{ name }</td>
+			<td class="{ class } tooltipped" data-position="top" data-delay="20" data-tooltip="{ button_id }">{ name }</td> 
 			<td class="{ class }">{ button_location }</td>
 			<td class="{ class }">{ last_seen_string }</td> 
 			<td class="{ class } tooltipped" data-position="top" data-delay="20" data-tooltip="{ hb_button_battery } V">{ hb_button_battery_percent }</td> 
