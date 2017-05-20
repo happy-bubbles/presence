@@ -63,84 +63,35 @@
 			ws_proto = "wss"
 		}
 
-		//do a thing every second
-		refreshList() {
-			$.getJSON( "api/results", function( data ) {
-					var bs = []
-					var btns = []
-					$.each(data.beacons, function(k, v) {
-								if(v) {
-									v.last_seen_string = moment(v.last_seen*1000).fromNow() 
-									if(v.location == "")
-									{
-										v.location = "Not Found"
-										v.last_seen_string = " - "
-										v.class = "grey-text text-darken-1"
-									}
-									v["url_name"] = encodeURIComponent(v.name);
-									bs.push(v);
-								}
-					});
-					$.each(data.buttons, function(k, v) {
-								if(v) {
-									v.last_seen_string = moment(v.last_seen*1000).fromNow() 
-									if(v.location == "")
-									{
-										v.location = "Not Found"
-										v.last_seen_string = " - "
-										v.class = "grey-text text-darken-1"
-									}
-									v["url_name"] = encodeURIComponent(v.name);
-									if(v.hb_button_mode == "button_only")
-									{
-										v.hb_button_mode = "Button Only";
-									}
-									else 
-									{
-										v.hb_button_mode = "Beacon & Button";
-									}
-									if(v.hb_button_battery != "")
-									{
-										v.hb_button_battery_percent = Math.floor((v.hb_button_battery / 3021)*100)+"%";
-										v.hb_button_battery = (v.hb_button_battery / 1000).toFixed(2);
-									}
-									else 
-									{
-										v.hb_button_battery_percent = "n/a";
-										v.hb_button_battery = "n/a";
-									}
-									btns.push(v);
-								}
-					});
+		var processData = function(data) {
+			var bs = []
+			var btns = []
 
-					self.beacons = bs;
-					self.buttons = btns;
-					self.update();
-					$('.material-tooltip').remove();
-					$('.tooltipped').tooltip({delay: 20});
+			data.buttons.sort(function(a, b) {
+					if(a.name < b.name) return -1;
+					if(a.name > b.name) return 1;
+					return 0;
 			});
-		}
+			data.beacons.sort(function(a, b) {
+					if(a.name < b.name) return -1;
+					if(a.name > b.name) return 1;
+					return 0;
+			});
 
-		var onmessage = function (evt) 
-		{
-			var data = JSON.parse(evt.data);
-			bs = [];
-			btns = [];
-							
 			$.each(data.beacons, function(k, v) {
-					if(v) {
-						v.last_seen_string = moment(v.last_seen*1000).fromNow() 
-						if(v.location == "")
-						{
-							v.location = "Not Found"
-							v.last_seen_string = " - "
-							v.class = "grey-text text-darken-1"
+						if(v) {
+							v.last_seen_string = moment(v.last_seen*1000).fromNow() 
+							if(v.location == "")
+							{
+								v.location = "Not Found"
+								v.last_seen_string = " - "
+								v.class = "grey-text text-darken-1"
+							}
+							v["url_name"] = encodeURIComponent(v.name);
+							bs.push(v);
 						}
-						v["url_name"] = encodeURIComponent(v.name);
-						bs.push(v);
-						}
-					});
-				$.each(data.buttons, function(k, v) {
+			});
+			$.each(data.buttons, function(k, v) {
 						if(v) {
 							v.last_seen_string = moment(v.last_seen*1000).fromNow() 
 							if(v.location == "")
@@ -170,12 +121,26 @@
 							}
 							btns.push(v);
 						}
-					});				
+			});
+
 			self.beacons = bs;
 			self.buttons = btns;
 			self.update();
 			$('.material-tooltip').remove();
 			$('.tooltipped').tooltip({delay: 20});
+		};
+
+		//do a thing every second
+		refreshList() {
+			$.getJSON( "api/results", function( data ) {
+				processData(data);	
+			});
+		}
+
+		var onmessage = function (evt) 
+		{
+			var data = JSON.parse(evt.data);
+			processData(data);	
 		};
 				
 		var onopen = function()
