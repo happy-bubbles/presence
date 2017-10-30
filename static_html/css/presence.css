@@ -20,3 +20,8 @@ latest_beacons, home {
 	font-size: 1.3em;
 	font-weight: bold;
 }
+
+#version {
+	padding-left: 20px;
+	color: black;
+}

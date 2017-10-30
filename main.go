@@ -44,6 +44,7 @@ type Settings struct {
 	Location_confidence    int64 `json:"location_confidence"`
 	Last_seen_threshold    int64 `json:"last_seen_threshold"`
 	Last_reading_threshold int64 `json:"last_reading_threshold"`
+	HA_send_interval       int64 `json:"ha_send_interval"`
 	HA_send_changes_only   bool  `json:"ha_send_changes_only"`
 }
 
@@ -61,6 +62,11 @@ type Incoming_json struct {
 	TX_power         string `json:"tx_power"`
 	Namespace        string `json:"namespace"`
 	Instance_id      string `json:"instance_id"`
+	// button stuff
+	HB_ButtonCounter int64  `json:"hb_button_counter"`
+	HB_Battery       int64  `json:"hb_button_battery"`
+	HB_RandomNonce   string `json:"hb_button_random"`
+	HB_ButtonMode    string `json:"hb_button_mode"`
 }
 
 type Advertisement struct {
@@ -94,12 +100,15 @@ type Best_location struct {
 }
 
 type HTTP_location struct {
-	Distance    float64 `json:"distance"`
-	Name        string  `json:"name"`
-	Beacon_name string  `json:"beacon_name"`
-	Beacon_id   string  `json:"beacon_id"`
-	Location    string  `json:"location"`
-	Last_seen   int64   `json:"last_seen"`
+	Distance      float64 `json:"distance"`
+	Name          string  `json:"name"`
+	Beacon_name   string  `json:"beacon_name"`
+	Beacon_id     string  `json:"beacon_id"`
+	Beacon_type   string  `json:"beacon_type"`
+	HB_Battery    int64   `json:"hb_button_battery"`
+	HB_ButtonMode string  `json:"hb_button_mode"`
+	Location      string  `json:"location"`
+	Last_seen     int64   `json:"last_seen"`
 }
 
 type Location_change struct {
@@ -118,7 +127,8 @@ type HA_message struct {
 }
 
 type HTTP_locations_list struct {
-	Results []HTTP_location `json:"results"`
+	Beacons []HTTP_location `json:"beacons"`
+	Buttons []Button        `json:"buttons"`
 }
 
 type Beacon struct {
@@ -132,6 +142,26 @@ type Beacon struct {
 	Previous_location           string
 	Previous_confident_location string
 	Location_confidence         int64
+
+	HB_ButtonCounter int64  `json:"hb_button_counter"`
+	HB_Battery       int64  `json:"hb_button_battery"`
+	HB_RandomNonce   string `json:"hb_button_random"`
+	HB_ButtonMode    string `json:"hb_button_mode"`
+}
+
+type Button struct {
+	Name            string        `json:"name"`
+	Button_id       string        `json:"button_id"`
+	Button_type     string        `json:"button_type"`
+	Button_location string        `json:"button_location"`
+	Incoming_JSON   Incoming_json `json:"incoming_json"`
+	Distance        float64       `json:"distance"`
+	Last_seen       int64         `json:"last_seen"`
+
+	HB_ButtonCounter int64  `json:"hb_button_counter"`
+	HB_Battery       int64  `json:"hb_button_battery"`
+	HB_RandomNonce   string `json:"hb_button_random"`
+	HB_ButtonMode    string `json:"hb_button_mode"`
 }
 
 type Beacons_list struct {
@@ -147,6 +177,8 @@ type Locations_list struct {
 // GLOBALS
 
 var BEACONS Beacons_list
+
+var Buttons_list map[string]Button
 
 var cli *client.Client
 
@@ -170,6 +202,7 @@ var settings = Settings{
 	Location_confidence:    8,
 	Last_seen_threshold:    45,
 	Last_reading_threshold: 8,
+	HA_send_interval:       5,
 	HA_send_changes_only:   false,
 }
 
@@ -186,8 +219,76 @@ func getBeaconID(incoming Incoming_json) string {
 		unique_id = fmt.Sprintf("%s_%s_%s", incoming.UUID, incoming.Major, incoming.Minor)
 	} else if incoming.Beacon_type == "eddystone" {
 		unique_id = fmt.Sprintf("%s_%s", incoming.Namespace, incoming.Instance_id)
+	} else if incoming.Beacon_type == "hb_button" {
+		unique_id = fmt.Sprintf("%s_%s", incoming.Namespace, incoming.Instance_id)
 	}
 	return unique_id
+}
+
+func incomingBeaconFilter(incoming Incoming_json) Incoming_json {
+	out_json := incoming
+	if incoming.Beacon_type != "ibeacon" && incoming.Beacon_type != "eddystone" && incoming.Beacon_type != "hb_button" {
+		//do additional checks here to detect if a Habby Bubbles Button
+		// looks like 020104020a0011ff045600012d3859db59e1000b9453
+
+		raw_data := incoming.Data
+		company_id := []byte{0x04, 0x56}
+		product_id := []byte{0x00, 0x01}
+		hb_button_prefix_str := fmt.Sprintf("020104020a0011ff%02x%02x%02x%02x", company_id[0], company_id[1], product_id[0], product_id[1])
+		if strings.HasPrefix(raw_data, hb_button_prefix_str) {
+			out_json.Namespace = "ddddeeeeeeffff5544ff"
+			out_json.Instance_id = raw_data[24:36]
+
+			//TODO: do MUCH better error handling here
+
+			counter_str := fmt.Sprintf("0x%s", raw_data[36:38])
+			counter, _ := strconv.ParseInt(counter_str, 0, 64)
+			out_json.HB_ButtonCounter = counter
+
+			battery_str := fmt.Sprintf("0x%s", raw_data[38:42])
+			battery, _ := strconv.ParseInt(battery_str, 0, 64)
+			out_json.HB_Battery = battery
+
+			out_json.HB_RandomNonce = raw_data[42:44]
+
+			mode := raw_data[44:46]
+			if mode == "00" {
+				out_json.HB_ButtonMode = "presence_button"
+			} else {
+				out_json.HB_ButtonMode = "button_only"
+			}
+			out_json.TX_power = fmt.Sprintf("0x%s", raw_data[46:48])
+
+			out_json.Beacon_type = "hb_button"
+
+			//debug
+			fmt.Println("Button adv has %#v\n", out_json)
+		}
+	} //else if incoming.Beacon_type == "eddystone" && incoming.Namespace == "ddddeeeeeeffff5544ff" {
+	//out_json.Beacon_type = "hb_button"
+	//}
+	return out_json
+}
+
+func processButton(bbeacon Beacon, cl *client.Client) {
+	btn := Button{Name: bbeacon.Name}
+	btn.Button_id = bbeacon.Beacon_id
+	btn.Button_type = bbeacon.Beacon_type
+	btn.Button_location = bbeacon.Previous_location
+	btn.Incoming_JSON = bbeacon.Incoming_JSON
+	btn.Distance = bbeacon.Distance
+	btn.Last_seen = bbeacon.Last_seen
+	btn.HB_ButtonCounter = bbeacon.HB_ButtonCounter
+	btn.HB_Battery = bbeacon.HB_Battery
+	btn.HB_RandomNonce = bbeacon.HB_RandomNonce
+	btn.HB_ButtonMode = bbeacon.HB_ButtonMode
+
+	nonce, ok := Buttons_list[btn.Button_id]
+	if !ok || nonce.HB_RandomNonce != btn.HB_RandomNonce {
+		// send the button message to MQTT
+		sendButtonMessage(btn, cl)
+	}
+	Buttons_list[btn.Button_id] = btn
 }
 
 func getiBeaconDistance(rssi int64, power string) float64 {
@@ -206,6 +307,9 @@ func getBeaconDistance(incoming Incoming_json) float64 {
 	if incoming.Beacon_type == "ibeacon" {
 		distance = getiBeaconDistance(incoming.RSSI, incoming.TX_power)
 	} else if incoming.Beacon_type == "eddystone" {
+		//TODO: fix this, probably not the way to do this calc with eddystone
+		distance = getiBeaconDistance(incoming.RSSI, incoming.TX_power)
+	} else if incoming.Beacon_type == "hb_button" {
 		//TODO: fix this, probably not the way to do this calc with eddystone
 		distance = getiBeaconDistance(incoming.RSSI, incoming.TX_power)
 	} else {
@@ -242,11 +346,30 @@ func sendHARoomMessage(beacon_id string, beacon_name string, distance float64, l
 	}
 }
 
-func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64, locations_list Locations_list, cl *client.Client) {
+func sendButtonMessage(btn Button, cl *client.Client) {
+	//first make the json
+	btn_msg, err := json.Marshal(btn)
+	if err != nil {
+		panic(err)
+	}
+
+	//send the message to HA
+	err = cl.Publish(&client.PublishOptions{
+		QoS:       mqtt.QoS1,
+		TopicName: []byte("happy-bubbles/presence/button/" + btn.Button_id),
+		Message:   btn_msg,
+	})
+	if err != nil {
+		panic(err)
+	}
+}
+
+func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64, ha_send_interval int64, locations_list Locations_list, cl *client.Client) {
 	// create the http results structure
 	http_results_lock.Lock()
 	http_results = HTTP_locations_list{}
-	http_results.Results = make([]HTTP_location, 0)
+	http_results.Beacons = make([]HTTP_location, 0)
+	http_results.Buttons = make([]Button, 0)
 	http_results_lock.Unlock()
 
 	should_persist := false
@@ -308,6 +431,9 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 		r.Name = beacon.Name
 		r.Beacon_name = beacon.Name
 		r.Beacon_id = beacon.Beacon_id
+		r.Beacon_type = beacon.Beacon_type
+		r.HB_Battery = beacon.HB_Battery
+		r.HB_ButtonMode = beacon.HB_ButtonMode
 		r.Location = best_location.name
 		r.Last_seen = best_location.last_seen
 
@@ -373,12 +499,15 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 		BEACONS.Beacons[beacon.Beacon_id] = beacon
 
 		http_results_lock.Lock()
-		http_results.Results = append(http_results.Results, r)
+		http_results.Beacons = append(http_results.Beacons, r)
 		http_results_lock.Unlock()
 
 		if best_location.name != "" {
 			if !settings.HA_send_changes_only {
-				sendHARoomMessage(beacon.Beacon_id, beacon.Name, best_location.distance, best_location.name, cl)
+				secs := int64(time.Now().Unix())
+				if secs%ha_send_interval == 0 {
+					sendHARoomMessage(beacon.Beacon_id, beacon.Name, best_location.distance, best_location.name, cl)
+				}
 			}
 		}
 
@@ -395,15 +524,12 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 		}
 	}
 
+	for _, button := range Buttons_list {
+		http_results.Buttons = append(http_results.Buttons, button)
+	}
+
 	if should_persist {
 		persistBeacons()
-	}
-}
-
-func getLikelyLocationsPoller(locations_list Locations_list, cl *client.Client) {
-	for {
-		<-time.After(1 * time.Second)
-		go getLikelyLocations(settings.Last_seen_threshold, settings.Last_reading_threshold, locations_list, cl)
 	}
 }
 
@@ -441,6 +567,17 @@ func IncomingMQTTProcessor(updateInterval time.Duration, cl *client.Client, db *
 			}
 		}
 
+		key = []byte("buttons_list")
+		val = bucket.Get(key)
+		if val != nil {
+			buf := bytes.NewBuffer(val)
+			dec := gob.NewDecoder(buf)
+			err = dec.Decode(&Buttons_list)
+			if err != nil {
+				log.Fatal("decode error:", err)
+			}
+		}
+
 		key = []byte("settings")
 		val = bucket.Get(key)
 		if val != nil {
@@ -470,6 +607,8 @@ func IncomingMQTTProcessor(updateInterval time.Duration, cl *client.Client, db *
 
 	Latest_beacons_list = make(map[string]Beacon)
 
+	Buttons_list = make(map[string]Button)
+
 	//create a map of locations, looked up by hostnames
 	locations_list := Locations_list{}
 	ls := make(map[string]Location)
@@ -482,91 +621,107 @@ func IncomingMQTTProcessor(updateInterval time.Duration, cl *client.Client, db *
 			select {
 
 			case <-ticker.C:
-				getLikelyLocations(settings.Last_seen_threshold, settings.Last_reading_threshold, locations_list, cl)
+				getLikelyLocations(settings.Last_seen_threshold, settings.Last_reading_threshold, settings.HA_send_interval, locations_list, cl)
 			case incoming := <-incoming_msgs_chan:
-				this_beacon_id := getBeaconID(incoming)
+				func() {
+					defer func() {
+						if err := recover(); err != nil {
+							log.Println("work failed:", err)
+						}
+					}()
 
-				now := time.Now().Unix()
+					incoming = incomingBeaconFilter(incoming)
+					this_beacon_id := getBeaconID(incoming)
 
-				//fmt.Println("saw " + this_beacon_id + " at " + incoming.Hostname)
+					now := time.Now().Unix()
 
-				//if this beacon isn't in our search list, add it to the latest_beacons pile.
-				beacon, ok := BEACONS.Beacons[this_beacon_id]
-				if !ok {
-					//should be unique
-					//if it's already in list, forget it.
-					latest_list_lock.Lock()
-					x, ok := Latest_beacons_list[this_beacon_id]
-					if ok {
-						//update its timestamp
-						x.Last_seen = now
-						x.Incoming_JSON = incoming
-						x.Distance = getBeaconDistance(incoming)
-						Latest_beacons_list[this_beacon_id] = x
-					} else {
-						Latest_beacons_list[this_beacon_id] = Beacon{Beacon_id: this_beacon_id, Beacon_type: incoming.Beacon_type, Last_seen: now, Incoming_JSON: incoming, Beacon_location: incoming.Hostname, Distance: getBeaconDistance(incoming)}
+					//fmt.Println("saw " + this_beacon_id + " at " + incoming.Hostname)
+
+					//if this beacon isn't in our search list, add it to the latest_beacons pile.
+					beacon, ok := BEACONS.Beacons[this_beacon_id]
+					if !ok {
+						//should be unique
+						//if it's already in list, forget it.
+						latest_list_lock.Lock()
+						x, ok := Latest_beacons_list[this_beacon_id]
+						if ok {
+							//update its timestamp
+							x.Last_seen = now
+							x.Incoming_JSON = incoming
+							x.Distance = getBeaconDistance(incoming)
+
+							Latest_beacons_list[this_beacon_id] = x
+						} else {
+							Latest_beacons_list[this_beacon_id] = Beacon{Beacon_id: this_beacon_id, Beacon_type: incoming.Beacon_type, Last_seen: now, Incoming_JSON: incoming, Beacon_location: incoming.Hostname, Distance: getBeaconDistance(incoming)}
+						}
+						for k, v := range Latest_beacons_list {
+							if (now - v.Last_seen) > 10 { // 10 seconds
+								delete(Latest_beacons_list, k)
+							}
+						}
+						latest_list_lock.Unlock()
+						//continue
+						return
 					}
-					for k, v := range Latest_beacons_list {
-						if (now - v.Last_seen) > 10 { // 10 seconds
-							delete(Latest_beacons_list, k)
+
+					beacon.Incoming_JSON = incoming
+					beacon.Last_seen = now
+					beacon.Beacon_type = incoming.Beacon_type
+					beacon.HB_ButtonCounter = incoming.HB_ButtonCounter
+					beacon.HB_Battery = incoming.HB_Battery
+					beacon.HB_RandomNonce = incoming.HB_RandomNonce
+					beacon.HB_ButtonMode = incoming.HB_ButtonMode
+					BEACONS.Beacons[beacon.Beacon_id] = beacon
+
+					if beacon.Beacon_type == "hb_button" {
+						processButton(beacon, cl)
+					}
+
+					//create metric for this beacon
+					this_metric := Beacon_metric{}
+					this_metric.distance = getBeaconDistance(incoming)
+					this_metric.timestamp = now
+
+					//lookup location by hostname in locations
+					location, ok := locations_list.locations[incoming.Hostname]
+					if !ok {
+						//create the location
+						locations_list.locations[incoming.Hostname] = Location{}
+						location, ok = locations_list.locations[incoming.Hostname]
+						location.found_beacons = make(map[string]Found_beacon)
+						//fmt.Println(location.name + " new location so making found_beacons map")
+						location.name = incoming.Hostname
+					}
+
+					//now look for our beacon in founds
+					this_found, ok := location.found_beacons[this_beacon_id]
+					if !ok {
+						//create this found beacon
+						this_found := Found_beacon{}
+						this_found.beacon_metrics = make([]Beacon_metric, 1)
+					}
+					this_found.beacon_id = this_beacon_id
+					this_found.last_seen = now
+					//add this metric to its metrics
+					this_found.beacon_metrics = append(this_found.beacon_metrics, this_metric)
+
+					//go through all the metrics in the location and get average
+					for i, metric := range this_found.beacon_metrics {
+						//if a reading is older than the threshold, remove it from calculations and list
+						if (now - metric.timestamp) > settings.Last_reading_threshold {
+							//x := len(this_found.beacon_metrics)
+							this_found.beacon_metrics = append(this_found.beacon_metrics[:i], this_found.beacon_metrics[i+1:]...)
+							//log.Println("removing metric from ", location.name, " and beacon ", this_found.beacon_id, "had ", x, " now has: ", len(this_found.beacon_metrics))
 						}
 					}
-					latest_list_lock.Unlock()
-					continue
-				}
 
-				beacon.Incoming_JSON = incoming
-				beacon.Last_seen = now
-				beacon.Beacon_type = incoming.Beacon_type
-				BEACONS.Beacons[beacon.Beacon_id] = beacon
-
-				//create metric for this beacon
-				this_metric := Beacon_metric{}
-				this_metric.distance = getBeaconDistance(incoming)
-				this_metric.timestamp = now
-
-				//lookup location by hostname in locations
-				location, ok := locations_list.locations[incoming.Hostname]
-				if !ok {
-					//create the location
-					locations_list.locations[incoming.Hostname] = Location{}
-					location, ok = locations_list.locations[incoming.Hostname]
-					location.found_beacons = make(map[string]Found_beacon)
-					//fmt.Println(location.name + " new location so making found_beacons map")
-					location.name = incoming.Hostname
-				}
-
-				//now look for our beacon in founds
-				this_found, ok := location.found_beacons[this_beacon_id]
-				if !ok {
-					//create this found beacon
-					this_found := Found_beacon{}
-					this_found.beacon_metrics = make([]Beacon_metric, 1)
-				}
-				this_found.beacon_id = this_beacon_id
-				this_found.last_seen = now
-				//add this metric to its metrics
-				this_found.beacon_metrics = append(this_found.beacon_metrics, this_metric)
-
-				//go through all the metrics in the location and get average
-				for i, metric := range this_found.beacon_metrics {
-					//if a reading is older than the threshold, remove it from calculations and list
-					if (now - metric.timestamp) > settings.Last_reading_threshold {
-						//x := len(this_found.beacon_metrics)
-						this_found.beacon_metrics = append(this_found.beacon_metrics[:i], this_found.beacon_metrics[i+1:]...)
-						//log.Println("removing metric from ", location.name, " and beacon ", this_found.beacon_id, "had ", x, " now has: ", len(this_found.beacon_metrics))
-					}
-				}
-
-				this_found.average_distance = getAverageDistance(this_found.beacon_metrics)
-				location.found_beacons[this_beacon_id] = this_found
-				locations_list.locations[incoming.Hostname] = location
+					this_found.average_distance = getAverageDistance(this_found.beacon_metrics)
+					location.found_beacons[this_beacon_id] = this_found
+					locations_list.locations[incoming.Hostname] = location
+				}()
 			}
 		}
 	}()
-
-	// create a thread for finding all the closest beacons
-	//go getLikelyLocationsPoller(locations_list, cl)
 
 	return incoming_msgs_chan
 }
@@ -690,7 +845,7 @@ func startServer() {
 
 func resultsHandler(w http.ResponseWriter, r *http.Request) {
 	http_results_lock.RLock()
-	js, err := json.Marshal(http_results.Results)
+	js, err := json.Marshal(http_results)
 	http_results_lock.RUnlock()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -712,16 +867,6 @@ func beaconsListHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(js)
 }
 
-func beaconsEditHandler(w http.ResponseWriter, r *http.Request) {
-	js, err := json.Marshal(http_results.Results)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Write(js)
-}
-
 func persistBeacons() error {
 	// gob it first
 	buf := &bytes.Buffer{}
@@ -731,6 +876,31 @@ func persistBeacons() error {
 	}
 
 	key := []byte("beacons_list")
+	// store some data
+	err = db.Update(func(tx *bolt.Tx) error {
+		bucket, err := tx.CreateBucketIfNotExists(world)
+		if err != nil {
+			return err
+		}
+
+		err = bucket.Put(key, []byte(buf.String()))
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	return nil
+}
+
+func persistButtons() error {
+	// gob it first
+	buf := &bytes.Buffer{}
+	enc := gob.NewEncoder(buf)
+	if err := enc.Encode(Buttons_list); err != nil {
+		return err
+	}
+
+	key := []byte("buttons_list")
 	// store some data
 	err = db.Update(func(tx *bolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists(world)
@@ -803,6 +973,11 @@ func beaconsDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	beacon_id := vars["beacon_id"]
 	delete(BEACONS.Beacons, beacon_id)
 
+	_, ok := Buttons_list[beacon_id]
+	if ok {
+		delete(Buttons_list, beacon_id)
+	}
+
 	err := persistBeacons()
 	if err != nil {
 		http.Error(w, "trouble persisting beacons list, create bucket", 500)
@@ -850,6 +1025,7 @@ func settingsEditHandler(w http.ResponseWriter, r *http.Request) {
 	//make sure values are > 0
 	if (in_settings.Location_confidence <= 0) ||
 		(in_settings.Last_seen_threshold <= 0) ||
+		(in_settings.HA_send_interval <= 0) ||
 		(in_settings.Last_reading_threshold <= 0) {
 		http.Error(w, "values must be greater than 0", 400)
 		return
@@ -893,7 +1069,7 @@ func writer(ws *websocket.Conn) {
 		case <-beaconTicker.C:
 
 			http_results_lock.RLock()
-			js, err := json.Marshal(http_results.Results)
+			js, err := json.Marshal(http_results)
 			http_results_lock.RUnlock()
 
 			if err != nil {

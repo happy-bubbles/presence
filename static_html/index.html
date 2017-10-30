@@ -26,6 +26,7 @@
 		<div class="nav-wrapper">
 			<a href="#home" class="brand-logo"><img class="logo" src="img/hippo.svg"></img></a>
 			<span class="logo-title hide-on-med-and-down">Happy Bubbles</span>
+			<span id="version"></span>
 			<ul id="nav-mobile" class="right hide-on-med-and-down">
 				<li><a href="#home">Home</a></li>
 				<li><a href="#latest-beacons">Latest Beacons Seen</a></li>
@@ -52,6 +53,13 @@
 	<script src="js/moment.min.js"></script>
 
 	<script>
+
+		$(function() {
+
+			$.get( "VERSION", function( data ) {
+				$("#version").html("v"+data);
+			})
+		});
 
 		riot.mount('#current_mount', 'home', {
 			title: 'Added Beacons',

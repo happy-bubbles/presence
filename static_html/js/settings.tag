@@ -21,6 +21,13 @@
           <label for="last_reading_threshold" class="active">Last Reading Threshold<i class="material-icons tooltipped" data-position="right" data-tooltip="Advanced option. How many seconds until a beacon reading is removed from calculations">help</i></label>
         </div>
       </div>
+			<h4>Home Assistant</h4>
+      <div class="row">
+        <div class="input-field col s12">
+          <input value="{opts.ha_send_interval}" id="ha_send_interval" type="number" min="1">
+          <label for="ha_send_interval" class="active">Home Assistant Publish Interval<i class="material-icons tooltipped" data-position="right" data-tooltip="How often to send beacon info to Home Assistant, setting this too low can cause high CPU usage on Raspberry Pi">help</i></label>
+        </div>
+      </div>
       <div class="row">
         <div class="input-field col s12">
           <input checked="{opts.ha_send_changes_only}" id="ha_send_changes_only" type="checkbox">
@@ -56,6 +63,9 @@
 				if(data.last_seen_threshold) {
 					$("#last_seen_threshold").val(data.last_seen_threshold);
 				}
+				if(data.ha_send_interval) {
+					$("#ha_send_interval").val(data.ha_send_interval);
+				}
 				if(data.ha_send_changes_only) {
 					$("#ha_send_changes_only").prop("checked", data.ha_send_changes_only);
 				}
@@ -67,6 +77,7 @@
 				form_data["location_confidence"] = parseInt($("#location_confidence").val());
 				form_data["last_seen_threshold"] = parseInt($("#last_seen_threshold").val());
 				form_data["last_reading_threshold"] = parseInt($("#last_reading_threshold").val());
+				form_data["ha_send_interval"] = parseInt($("#ha_send_interval").val());
 				form_data["ha_send_changes_only"] = $("#ha_send_changes_only").prop("checked");
 				//console.log(form_data);
 				$.ajax(
