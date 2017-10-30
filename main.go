@@ -44,6 +44,7 @@ type Settings struct {
 	Location_confidence    int64 `json:"location_confidence"`
 	Last_seen_threshold    int64 `json:"last_seen_threshold"`
 	Last_reading_threshold int64 `json:"last_reading_threshold"`
+	HA_send_interval       int64 `json:"ha_send_interval"`
 	HA_send_changes_only   bool  `json:"ha_send_changes_only"`
 }
 
@@ -201,6 +202,7 @@ var settings = Settings{
 	Location_confidence:    8,
 	Last_seen_threshold:    45,
 	Last_reading_threshold: 8,
+	HA_send_interval:       5,
 	HA_send_changes_only:   false,
 }
 
@@ -362,7 +364,7 @@ func sendButtonMessage(btn Button, cl *client.Client) {
 	}
 }
 
-func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64, locations_list Locations_list, cl *client.Client) {
+func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64, ha_send_interval int64, locations_list Locations_list, cl *client.Client) {
 	// create the http results structure
 	http_results_lock.Lock()
 	http_results = HTTP_locations_list{}
@@ -502,7 +504,10 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 
 		if best_location.name != "" {
 			if !settings.HA_send_changes_only {
-				sendHARoomMessage(beacon.Beacon_id, beacon.Name, best_location.distance, best_location.name, cl)
+				secs := int64(time.Now().Unix())
+				if secs%ha_send_interval == 0 {
+					sendHARoomMessage(beacon.Beacon_id, beacon.Name, best_location.distance, best_location.name, cl)
+				}
 			}
 		}
 
@@ -525,13 +530,6 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 
 	if should_persist {
 		persistBeacons()
-	}
-}
-
-func getLikelyLocationsPoller(locations_list Locations_list, cl *client.Client) {
-	for {
-		<-time.After(1 * time.Second)
-		go getLikelyLocations(settings.Last_seen_threshold, settings.Last_reading_threshold, locations_list, cl)
 	}
 }
 
@@ -623,7 +621,7 @@ func IncomingMQTTProcessor(updateInterval time.Duration, cl *client.Client, db *
 			select {
 
 			case <-ticker.C:
-				getLikelyLocations(settings.Last_seen_threshold, settings.Last_reading_threshold, locations_list, cl)
+				getLikelyLocations(settings.Last_seen_threshold, settings.Last_reading_threshold, settings.HA_send_interval, locations_list, cl)
 			case incoming := <-incoming_msgs_chan:
 				func() {
 					defer func() {
@@ -724,9 +722,6 @@ func IncomingMQTTProcessor(updateInterval time.Duration, cl *client.Client, db *
 			}
 		}
 	}()
-
-	// create a thread for finding all the closest beacons
-	//go getLikelyLocationsPoller(locations_list, cl)
 
 	return incoming_msgs_chan
 }
@@ -1030,6 +1025,7 @@ func settingsEditHandler(w http.ResponseWriter, r *http.Request) {
 	//make sure values are > 0
 	if (in_settings.Location_confidence <= 0) ||
 		(in_settings.Last_seen_threshold <= 0) ||
+		(in_settings.HA_send_interval <= 0) ||
 		(in_settings.Last_reading_threshold <= 0) {
 		http.Error(w, "values must be greater than 0", 400)
 		return

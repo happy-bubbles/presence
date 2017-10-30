@@ -1,28 +1,29 @@
 <latest_beacons>
 
+	<style>
+		/* from http://colorbrewer2.org/#type=sequential&scheme=BuGn&n=4 */
+		.sig1{background-color:rgba(237,248,251, 0.65)} 
+		.sig2{background-color:rgba(178,226,226, 0.65)} 
+		.sig3{background-color:rgba(102,194,164, 0.65)} 
+		.sig4{background-color:rgba(35,139,69, 0.65)}
+		
+	</style>
+
   <h2>{ opts.title }</h2>
 
 	<div class="progress" id="ws_status">
     <div class="indeterminate blue"></div>
 	</div>
   <table>
-		<tr>
-			<th>Beacon ID</th>
-			<th>Beacon Location</th>
-			<th>Beacon type</th>
-			<th>Last seen</th>
-			<th>Distance</th>
-			<th>Add</th>
-		</tr>
-    <tr each={ beacons }>
-			<td>{ beacon_id }</td>
-			<td>{ beacon_location }</td>
-			<td if={beacon_type == ""} >raw</td>
-			<td if={beacon_type != ""} >{ beacon_type }</td>
-			<td>{ moment(last_seen*1000).fromNow() }</td> 
-			<td if={distance != ""} >{ distance }</td>
-			<td><a href="#add-beacon/{ beacon_id }">{ add_label }</a></td>
-    </tr>
+			<tr>
+				<th>Beacon ID</th>
+				<th>Beacon Location</th>
+				<th>Beacon type</th>
+				<th>Last seen</th>
+				<th>Distance</th>
+				<th>Add</th>
+			</tr>
+			<tr each={ beacon in beacons} data-is='beacon-row' item={ beacon }></tr> 
   </table>
 
 	<br />
@@ -43,6 +44,44 @@
 			ws_proto = "wss"
 		}
 
+		var get_dist = function(distance, unit) {
+			var sig = "sig1";
+
+			if(unit == "db") {
+				console.log(distance);
+				if(distance > 100) {
+					sig = "sig1";
+				}
+				else if(distance > 90) {
+					sig = "sig2";
+				}
+				else if(distance > 80) {
+					sig = "sig3";
+				}
+				else {
+					sig = "sig4";
+				}
+				console.log(sig+" ,"+distance)
+			}
+			else if(unit == "meters") {
+				if(distance > 15) {
+					sig = "sig1";
+				}
+				else if(distance > 10) {
+					sig = "sig2";
+				}
+				else if(distance > 2) {
+					sig = "sig3";
+				}
+				else {
+					sig = "sig4";
+				}
+
+			}
+
+			return sig;
+		}
+
 		var list_filter = function(data) {
 			var beacons = data.map(function(b)
 				{
@@ -50,10 +89,12 @@
 				if(b.beacon_type=="ibeacon") 
 				{
 					b.distance = Math.round(parseFloat(b.distance)*100)/100 +" meters";
+					b.sig_class = get_dist((parseFloat(b.distance)*100)/100, "meters");
 				}
 				else if(b.beacon_type=="eddystone") 
 				{
 					b.distance = Math.round(parseFloat(b.distance)*100)/100 +" meters";
+					b.sig_class = get_dist((parseFloat(b.distance)*100)/100, "meters");
 					if(b.incoming_json.namespace == "ddddeeeeeeffff5544ff")
 					{
 						b.beacon_type = "HB Button";
@@ -62,11 +103,13 @@
 				else if(b.beacon_type=="hb_button") 
 				{
 					b.distance = Math.round(parseFloat(b.distance)*100)/100 +" meters";
+					b.sig_class = get_dist((parseFloat(b.distance)*100)/100, "meters");
 					b.add_label = "Add this button";
 					b.beacon_type = "HB Button"
 				}
 				else 
 				{
+					b.sig_class = get_dist(b.distance, "db");
 					b.distance = "-"+b.distance+ " db";
 				}
 				return b;
@@ -182,4 +225,13 @@
 	</script>
 
 </latest_beacons>
-
+				
+<beacon-row>
+	<td class={ beacon.sig_class } >{ beacon.beacon_id }</td>
+	<td class={ beacon.sig_class } >{ beacon.beacon_location }</td>
+	<td class={ beacon.sig_class }  if={beacon.beacon_type == ""} >raw</td>
+	<td class={ beacon.sig_class }  if={beacon.beacon_type != ""} >{ beacon.beacon_type }</td>
+	<td class={ beacon.sig_class } >{ moment(beacon.last_seen*1000).fromNow() }</td> 
+	<td class={ beacon.sig_class }  if={beacon.distance != ""} >{ beacon.distance }</td>
+	<td class={ beacon.sig_class } ><a href="#add-beacon/{ beacon.beacon_id }">{ beacon.add_label }</a></td>
+</beacon-row>
