@@ -41,11 +41,10 @@ const (
 // data structures
 
 type Settings struct {
-	Location_confidence    int64 `json:"location_confidence"`
-	Last_seen_threshold    int64 `json:"last_seen_threshold"`
-	Last_reading_threshold int64 `json:"last_reading_threshold"`
-	HA_send_interval       int64 `json:"ha_send_interval"`
-	HA_send_changes_only   bool  `json:"ha_send_changes_only"`
+	Location_confidence  int64 `json:"location_confidence"`
+	Beacon_metrics_size  int   `json:"beacon_metrics_size"`
+	HA_send_interval     int64 `json:"ha_send_interval"`
+	HA_send_changes_only bool  `json:"ha_send_changes_only"`
 }
 
 type Incoming_json struct {
@@ -75,22 +74,16 @@ type Advertisement struct {
 	seen    int64
 }
 
-type Beacon_metric struct {
+type beacon_metric struct {
+	location  string
 	distance  float64
+	rssi      int64
 	timestamp int64
 }
 
-type Found_beacon struct {
-	beacon_id        string
-	last_seen        int64
-	average_distance float64
-	beacon_metrics   []Beacon_metric
-}
-
 type Location struct {
-	name          string
-	found_beacons map[string]Found_beacon
-	lock          sync.RWMutex
+	name string
+	lock sync.RWMutex
 }
 
 type Best_location struct {
@@ -142,6 +135,7 @@ type Beacon struct {
 	Previous_location           string
 	Previous_confident_location string
 	Location_confidence         int64
+	beacon_metrics              []beacon_metric
 
 	HB_ButtonCounter int64  `json:"hb_button_counter"`
 	HB_Battery       int64  `json:"hb_button_battery"`
@@ -199,11 +193,10 @@ var upgrader = websocket.Upgrader{
 }
 
 var settings = Settings{
-	Location_confidence:    8,
-	Last_seen_threshold:    45,
-	Last_reading_threshold: 8,
-	HA_send_interval:       5,
-	HA_send_changes_only:   false,
+	Location_confidence:  8,
+	Beacon_metrics_size:  30,
+	HA_send_interval:     5,
+	HA_send_changes_only: false,
 }
 
 // utility function
@@ -319,7 +312,7 @@ func getBeaconDistance(incoming Incoming_json) float64 {
 	return distance
 }
 
-func getAverageDistance(beacon_metrics []Beacon_metric) float64 {
+func getAverageDistance(beacon_metrics []beacon_metric) float64 {
 	total := 0.0
 
 	for _, v := range beacon_metrics {
@@ -364,7 +357,7 @@ func sendButtonMessage(btn Button, cl *client.Client) {
 	}
 }
 
-func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64, ha_send_interval int64, locations_list Locations_list, cl *client.Client) {
+func getLikelyLocations(settings Settings, locations_list Locations_list, cl *client.Client) {
 	// create the http results structure
 	http_results_lock.Lock()
 	http_results = HTTP_locations_list{}
@@ -376,47 +369,38 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 
 	// iterate through the beacons we want to search for
 	for _, beacon := range BEACONS.Beacons {
-		//fmt.Printf("doing iteration and saw %s with ID %s\n", beacon_name, beacon_id)
-		//fmt.Printf("num locs %d\n", len(locations))
-		best_location := Best_location{}
-		//go through each location
-		now := time.Now().Unix()
-		for _, location := range locations_list.locations {
-			//fmt.Printf("doing iteration and saw location %s\n", location_name)
-			// get last_seen for this location
-			found_b, ok := location.found_beacons[beacon.Beacon_id]
-			if ok {
-				//fmt.Printf("found %s in %s\n", beacon_id, location_name)
-				if (now - found_b.last_seen) > last_seen_threshold {
-					continue
-				}
-				ldistance := location.found_beacons[beacon.Beacon_id].average_distance
 
-				if best_location == (Best_location{}) {
-					best_location = Best_location{name: location.name, distance: ldistance, last_seen: location.found_beacons[beacon.Beacon_id].last_seen}
-				} else if ldistance < best_location.distance {
-					best_location = Best_location{name: location.name, distance: ldistance, last_seen: location.found_beacons[beacon.Beacon_id].last_seen}
-				}
-			}
+		if len(beacon.beacon_metrics) == 0 {
+			continue
 		}
 
-		// debug stuff, show other candidates
+		best_location := Best_location{}
 
-		/*
-			fmt.Printf("DEBUG: %s - best location: %s \n", beacon.Name, best_location.name)
-			for _, location := range locations_list.locations {
-				avg_distance := location.found_beacons[beacon.Beacon_id].average_distance
-				now = time.Now().Unix()
-				ago := now - location.found_beacons[beacon.Beacon_id].last_seen
-				fmt.Printf("\t%s - average: %f, metrics: %d, last_seen: %d\n", location.name, avg_distance, len(location.found_beacons[beacon.Beacon_id].beacon_metrics), ago)
-				fmt.Printf("\t\t")
-				for _, met := range location.found_beacons[beacon.Beacon_id].beacon_metrics {
-					fmt.Printf("%f ", met.distance)
-				}
-				fmt.Printf("\n")
+		// go through its beacon metrics and pick out the location that appears most often
+		loc_list := make(map[string]float64)
+		seen_weight := 1.5
+		rssi_weight := 0.75
+		for _, metric := range beacon.beacon_metrics {
+			loc, ok := loc_list[metric.location]
+			if !ok {
+				loc = seen_weight + (rssi_weight * (1.0 - (float64(metric.rssi) / -100.0)))
+			} else {
+				loc = loc + seen_weight + (rssi_weight * (1.0 - (float64(metric.rssi) / -100.0)))
 			}
-			fmt.Printf("\n")
-		*/
+			loc_list[metric.location] = loc
+		}
+		//fmt.Printf("beacon: %s list: %#v\n", beacon.Name, loc_list)
+		// now go through the list and find the largest, that's the location
+		best_name := ""
+		ts := 0.0
+		for name, times_seen := range loc_list {
+			if times_seen > ts {
+				best_name = name
+				ts = times_seen
+			}
+		}
+		//fmt.Printf("BEST LOCATION FOR %s IS: %s with score: %f\n", beacon.Name, best_name, ts)
+		best_location = Best_location{name: best_name, distance: beacon.beacon_metrics[len(beacon.beacon_metrics)-1].distance, last_seen: beacon.beacon_metrics[len(beacon.beacon_metrics)-1].timestamp}
 
 		//filter, only let this location become best if it was X times in a row
 		if best_location.name == beacon.Previous_location {
@@ -443,7 +427,6 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 			should_persist = true
 			fmt.Printf("detected a change!!! %#v\n\n", beacon)
 
-			// just for good measure, should have to earn it
 			beacon.Location_confidence = 0
 
 			//first make the json
@@ -468,30 +451,6 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 
 			beacon.Previous_confident_location = best_location.name
 
-			// clear all previous entries of this beacon from all locations, except this best one
-			//log.Println("before clear")
-
-			for k, location := range locations_list.locations {
-				log.Println(location.name, beacon.Name, len(location.found_beacons[beacon.Name].beacon_metrics))
-				if location.name == best_location.name {
-					continue
-				}
-				log.Println("deleting ", beacon.Name, "from ", location.name)
-				delete(location.found_beacons, beacon.Name)
-				/*
-					locbeac := location.found_beacons[beacon.Name]
-					locbeac.beacon_metrics = make([]Beacon_metric, 1)
-					location.found_beacons[beacon.Name] = locbeac
-				*/
-				locations_list.locations[k] = location
-			}
-
-			/*
-				log.Println("after clear")
-				for _, location := range locations {
-					log.Println(location.name, beacon.Name, len(location.found_beacons[beacon.Name].beacon_metrics))
-				}
-			*/
 		}
 
 		beacon.Previous_location = best_location.name
@@ -505,7 +464,7 @@ func getLikelyLocations(last_seen_threshold int64, last_reading_threshold int64,
 		if best_location.name != "" {
 			if !settings.HA_send_changes_only {
 				secs := int64(time.Now().Unix())
-				if secs%ha_send_interval == 0 {
+				if secs%settings.HA_send_interval == 0 {
 					sendHARoomMessage(beacon.Beacon_id, beacon.Name, best_location.distance, best_location.name, cl)
 				}
 			}
@@ -597,13 +556,11 @@ func IncomingMQTTProcessor(updateInterval time.Duration, cl *client.Client, db *
 	}
 
 	//debug list them out
-	/*
-		fmt.Println("Database beacons:")
-		for _, beacon := range BEACONS.Beacons {
-			fmt.Println("Database has known beacon: " + beacon.Beacon_id + " " + beacon.Name)
-		}
-	*/
-	//fmt.Println("Settings has %#v\n", settings)
+	fmt.Println("Database beacons:")
+	for _, beacon := range BEACONS.Beacons {
+		fmt.Println("Database has known beacon: " + beacon.Beacon_id + " " + beacon.Name)
+	}
+	fmt.Println("Settings has %#v\n", settings)
 
 	Latest_beacons_list = make(map[string]Beacon)
 
@@ -621,7 +578,7 @@ func IncomingMQTTProcessor(updateInterval time.Duration, cl *client.Client, db *
 			select {
 
 			case <-ticker.C:
-				getLikelyLocations(settings.Last_seen_threshold, settings.Last_reading_threshold, settings.HA_send_interval, locations_list, cl)
+				getLikelyLocations(settings, locations_list, cl)
 			case incoming := <-incoming_msgs_chan:
 				func() {
 					defer func() {
@@ -671,16 +628,29 @@ func IncomingMQTTProcessor(updateInterval time.Duration, cl *client.Client, db *
 					beacon.HB_Battery = incoming.HB_Battery
 					beacon.HB_RandomNonce = incoming.HB_RandomNonce
 					beacon.HB_ButtonMode = incoming.HB_ButtonMode
+
+					if beacon.beacon_metrics == nil {
+						beacon.beacon_metrics = make([]beacon_metric, settings.Beacon_metrics_size)
+					}
+					//create metric for this beacon
+					this_metric := beacon_metric{}
+					this_metric.distance = getBeaconDistance(incoming)
+					this_metric.timestamp = now
+					this_metric.rssi = int64(incoming.RSSI)
+					this_metric.location = incoming.Hostname
+					beacon.beacon_metrics = append(beacon.beacon_metrics, this_metric)
+					//fmt.Printf("APPENDING a metric from %s len %d\n", beacon.Name, len(beacon.beacon_metrics))
+					if len(beacon.beacon_metrics) > settings.Beacon_metrics_size {
+						//fmt.Printf("deleting a metric from %s len %d\n", beacon.Name, len(beacon.beacon_metrics))
+						beacon.beacon_metrics = append(beacon.beacon_metrics[:0], beacon.beacon_metrics[0+1:]...)
+					}
+					//fmt.Printf("%#v\n", beacon.Beacon_metrics)
+
 					BEACONS.Beacons[beacon.Beacon_id] = beacon
 
 					if beacon.Beacon_type == "hb_button" {
 						processButton(beacon, cl)
 					}
-
-					//create metric for this beacon
-					this_metric := Beacon_metric{}
-					this_metric.distance = getBeaconDistance(incoming)
-					this_metric.timestamp = now
 
 					//lookup location by hostname in locations
 					location, ok := locations_list.locations[incoming.Hostname]
@@ -688,35 +658,8 @@ func IncomingMQTTProcessor(updateInterval time.Duration, cl *client.Client, db *
 						//create the location
 						locations_list.locations[incoming.Hostname] = Location{}
 						location, ok = locations_list.locations[incoming.Hostname]
-						location.found_beacons = make(map[string]Found_beacon)
-						//fmt.Println(location.name + " new location so making found_beacons map")
 						location.name = incoming.Hostname
 					}
-
-					//now look for our beacon in founds
-					this_found, ok := location.found_beacons[this_beacon_id]
-					if !ok {
-						//create this found beacon
-						this_found := Found_beacon{}
-						this_found.beacon_metrics = make([]Beacon_metric, 1)
-					}
-					this_found.beacon_id = this_beacon_id
-					this_found.last_seen = now
-					//add this metric to its metrics
-					this_found.beacon_metrics = append(this_found.beacon_metrics, this_metric)
-
-					//go through all the metrics in the location and get average
-					for i, metric := range this_found.beacon_metrics {
-						//if a reading is older than the threshold, remove it from calculations and list
-						if (now - metric.timestamp) > settings.Last_reading_threshold {
-							//x := len(this_found.beacon_metrics)
-							this_found.beacon_metrics = append(this_found.beacon_metrics[:i], this_found.beacon_metrics[i+1:]...)
-							//log.Println("removing metric from ", location.name, " and beacon ", this_found.beacon_id, "had ", x, " now has: ", len(this_found.beacon_metrics))
-						}
-					}
-
-					this_found.average_distance = getAverageDistance(this_found.beacon_metrics)
-					location.found_beacons[this_beacon_id] = this_found
 					locations_list.locations[incoming.Hostname] = location
 				}()
 			}
@@ -1024,9 +967,7 @@ func settingsEditHandler(w http.ResponseWriter, r *http.Request) {
 
 	//make sure values are > 0
 	if (in_settings.Location_confidence <= 0) ||
-		(in_settings.Last_seen_threshold <= 0) ||
-		(in_settings.HA_send_interval <= 0) ||
-		(in_settings.Last_reading_threshold <= 0) {
+		(in_settings.HA_send_interval <= 0) {
 		http.Error(w, "values must be greater than 0", 400)
 		return
 	}
