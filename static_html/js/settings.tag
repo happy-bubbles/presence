@@ -9,16 +9,16 @@
           <label for="location_confidence" class="active">Location Confidence<i class="material-icons tooltipped" data-position="right" data-tooltip="How many times in a row a beacon should be seen in a location before it's considered located there. The higher this value is, the more accuracy is improved, but the longer it will need to take effect">help</i></label>
         </div>
       </div>
+			<div class="row">
+				<div class="input-field col s12">
+					<input value="{opts.last_seen_threshold}" id="last_seen_threshold" type="number" min="1">
+					<label for="last_seen_threshold" class="active">Last Seen Threshold<i class="material-icons tooltipped" data-position="right" data-tooltip="How many seconds until a beacon is considered gone">help</i></label>
+				</div>
+			</div>
       <div class="row">
         <div class="input-field col s12">
-          <input value="{opts.last_seen_threshold}" id="last_seen_threshold" type="number" min="1">
-          <label for="last_seen_threshold" class="active">Last Seen Threshold<i class="material-icons tooltipped" data-position="right" data-tooltip="How many seconds until a beacon is considered gone">help</i></label>
-        </div>
-      </div>
-      <div class="row">
-        <div class="input-field col s12">
-          <input value="{opts.last_reading_threshold}" id="last_reading_threshold" type="number" min="1">
-          <label for="last_reading_threshold" class="active">Last Reading Threshold<i class="material-icons tooltipped" data-position="right" data-tooltip="Advanced option. How many seconds until a beacon reading is removed from calculations">help</i></label>
+          <input value="{opts.beacon_metrics_size}" id="beacon_metrics_size" type="number" min="1">
+          <label for="beacon_metrics_size" class="active">Beacon metrics size<i class="material-icons tooltipped" data-position="right" data-tooltip="How many previous signal readings, from all detectors, to keep for a beacon for calculation">help</i></label>
         </div>
       </div>
 			<h4>Home Assistant</h4>
@@ -54,14 +54,14 @@
 				dataType: 'json',
 			})
 			.done(function(data) {
-				if(data.last_reading_threshold) {
-					$("#last_reading_threshold").val(data.last_reading_threshold);
-				}
 				if(data.location_confidence) {
 					$("#location_confidence").val(data.location_confidence);
 				}
 				if(data.last_seen_threshold) {
 					$("#last_seen_threshold").val(data.last_seen_threshold);
+				}
+				if(data.beacon_metrics_size) {
+					$("#beacon_metrics_size").val(data.beacon_metrics_size);
 				}
 				if(data.ha_send_interval) {
 					$("#ha_send_interval").val(data.ha_send_interval);
@@ -76,7 +76,7 @@
 				var form_data = {}
 				form_data["location_confidence"] = parseInt($("#location_confidence").val());
 				form_data["last_seen_threshold"] = parseInt($("#last_seen_threshold").val());
-				form_data["last_reading_threshold"] = parseInt($("#last_reading_threshold").val());
+				form_data["beacon_metrics_size"] = parseInt($("#beacon_metrics_size").val());
 				form_data["ha_send_interval"] = parseInt($("#ha_send_interval").val());
 				form_data["ha_send_changes_only"] = $("#ha_send_changes_only").prop("checked");
 				//console.log(form_data);
