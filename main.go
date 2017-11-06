@@ -42,6 +42,7 @@ const (
 
 type Settings struct {
 	Location_confidence  int64 `json:"location_confidence"`
+	Last_seen_threshold  int64 `json:"last_seen_threshold"`
 	Beacon_metrics_size  int   `json:"beacon_metrics_size"`
 	HA_send_interval     int64 `json:"ha_send_interval"`
 	HA_send_changes_only bool  `json:"ha_send_changes_only"`
@@ -194,6 +195,7 @@ var upgrader = websocket.Upgrader{
 
 var settings = Settings{
 	Location_confidence:  8,
+	Last_seen_threshold:  45,
 	Beacon_metrics_size:  30,
 	HA_send_interval:     5,
 	HA_send_changes_only: false,
@@ -371,6 +373,10 @@ func getLikelyLocations(settings Settings, locations_list Locations_list, cl *cl
 	for _, beacon := range BEACONS.Beacons {
 
 		if len(beacon.beacon_metrics) == 0 {
+			continue
+		}
+
+		if (int64(time.Now().Unix()) - (beacon.beacon_metrics[len(beacon.beacon_metrics)-1].timestamp)) > settings.Last_seen_threshold {
 			continue
 		}
 
@@ -967,6 +973,7 @@ func settingsEditHandler(w http.ResponseWriter, r *http.Request) {
 
 	//make sure values are > 0
 	if (in_settings.Location_confidence <= 0) ||
+		(in_settings.Last_seen_threshold <= 0) ||
 		(in_settings.HA_send_interval <= 0) {
 		http.Error(w, "values must be greater than 0", 400)
 		return
