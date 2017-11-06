@@ -257,7 +257,7 @@ func incomingBeaconFilter(incoming Incoming_json) Incoming_json {
 			out_json.Beacon_type = "hb_button"
 
 			//debug
-			fmt.Println("Button adv has %#v\n", out_json)
+			//fmt.Println("Button adv has %#v\n", out_json)
 		}
 	} //else if incoming.Beacon_type == "eddystone" && incoming.Namespace == "ddddeeeeeeffff5544ff" {
 	//out_json.Beacon_type = "hb_button"
@@ -562,12 +562,13 @@ func IncomingMQTTProcessor(updateInterval time.Duration, cl *client.Client, db *
 	}
 
 	//debug list them out
-	fmt.Println("Database beacons:")
-	for _, beacon := range BEACONS.Beacons {
-		fmt.Println("Database has known beacon: " + beacon.Beacon_id + " " + beacon.Name)
-	}
-	fmt.Println("Settings has %#v\n", settings)
-
+	/*
+		fmt.Println("Database beacons:")
+		for _, beacon := range BEACONS.Beacons {
+			fmt.Println("Database has known beacon: " + beacon.Beacon_id + " " + beacon.Name)
+		}
+		fmt.Println("Settings has %#v\n", settings)
+	*/
 	Latest_beacons_list = make(map[string]Beacon)
 
 	Buttons_list = make(map[string]Button)
