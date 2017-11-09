@@ -1,8 +1,10 @@
-FROM debian:jessie
+FROM alpine:3.6
 
 MAINTAINER Rinie Romain <romain.rinie@googlemail.com>
 
-RUN apt-get update && apt-get install -y mosquitto mosquitto-clients wget unzip
+RUN apk update \
+ && apk add ca-certificates wget unzip \
+ && update-ca-certificates
 
 RUN wget https://github.com/happy-bubbles/presence/releases/download/1.8.0/presence_linux_386.zip
 
