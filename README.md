@@ -49,16 +49,17 @@ The payloads of both messages are in JSON format.
 
 ## Run in a Docker container
 
-#### 0. Generate and start the docker container
+#### 0. Set your MQTT configuration
+MQTT settings must be changed to match your setup in docker/docker-entrypoint.sh.  
+Optionnaly you can also change the web interface port by changing http_host_path.
+
+Example:
+```./presence -http_host_path=0.0.0.0:5555 -mqtt_client_id=happy_bubbles -mqtt_host=192.168.0.123:1883 -mqtt_password=1234 -mqtt_username=homeassistant```
+
+#### 1. Generate and start the docker container
 1. Start docker/build.sh
 2. Start docker/run.sh
 3. The interface is available at http://locahost:5555
-
-#### 1. Settings
-MQTT and web interface settings can be added/changed in docker/docker-entrypoint.sh
-
-Example:
-```./presence -http_host_path=0.0.0.0:5555 -mqtt_client_id=happy_buble -mqtt_host=localhost:1883 -mqtt_password=1234 -mqtt_username=homeassistant```
 
 #### TODO
 * Publish the HTTP and MQTT API for presence server
