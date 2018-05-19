@@ -685,6 +685,7 @@ func main() {
 	mqtt_username_ptr := flag.String("mqtt_username", "none", "The username needed to connect to the MQTT server, 'none' if it doesn't need one")
 	mqtt_password_ptr := flag.String("mqtt_password", "none", "The password needed to connect to the MQTT server, 'none' if it doesn't need one")
 	mqtt_client_id_ptr := flag.String("mqtt_client_id", "happy-bubbles-presence-detector", "The client ID for the MQTT server")
+	db_file_ptr := flag.String("db_file", "presence.db", "The location of the database file")
 
 	flag.Parse()
 
@@ -703,7 +704,7 @@ func main() {
 	defer cli.Terminate()
 
 	//open the database
-	db, err = bolt.Open("presence.db", 0644, nil)
+	db, err = bolt.Open(*db_file_ptr, 0644, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
