@@ -21,6 +21,12 @@
           <label for="beacon_metrics_size" class="active">Beacon metrics size<i class="material-icons tooltipped" data-position="right" data-tooltip="How many previous signal readings, from all detectors, to keep for a beacon for calculation">help</i></label>
         </div>
       </div>
+      <div class="row">
+        <div class="input-field col s12">
+          <input value="{opts.rssi_min_threshold}" id="rssi_min_threshold" type="number">
+          <label for="rssi_min_threshold" class="active">RSSI minimum threshold<i class="material-icons tooltipped" data-position="right" data-tooltip="Minimum RSSI (in dB) to include in beacon positioning calculations">help</i></label>
+        </div>
+      </div>
 			<h4>Home Assistant</h4>
       <div class="row">
         <div class="input-field col s12">
@@ -37,7 +43,7 @@
       <div class="row">
 				<button class="btn waves-effect waves-light" type="submit" name="action">Submit
 		  		<i class="material-icons right">send</i>
-		   </button> 
+		   </button>
       </div>
     </form>
   </div>
@@ -63,6 +69,9 @@
 				if(data.beacon_metrics_size) {
 					$("#beacon_metrics_size").val(data.beacon_metrics_size);
 				}
+				if(data.rssi_min_threshold) {
+					$("#rssi_min_threshold").val(data.rssi_min_threshold);
+				}
 				if(data.ha_send_interval) {
 					$("#ha_send_interval").val(data.ha_send_interval);
 				}
@@ -77,6 +86,7 @@
 				form_data["location_confidence"] = parseInt($("#location_confidence").val());
 				form_data["last_seen_threshold"] = parseInt($("#last_seen_threshold").val());
 				form_data["beacon_metrics_size"] = parseInt($("#beacon_metrics_size").val());
+				form_data["rssi_min_threshold"] = parseInt($("#rssi_min_threshold").val());
 				form_data["ha_send_interval"] = parseInt($("#ha_send_interval").val());
 				form_data["ha_send_changes_only"] = $("#ha_send_changes_only").prop("checked");
 				//console.log(form_data);

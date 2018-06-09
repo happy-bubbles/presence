@@ -46,6 +46,7 @@ type Settings struct {
 	Beacon_metrics_size  int   `json:"beacon_metrics_size"`
 	HA_send_interval     int64 `json:"ha_send_interval"`
 	HA_send_changes_only bool  `json:"ha_send_changes_only"`
+	RSSI_min_threshold   int64 `json:"rssi_min_threshold"`
 }
 
 type Incoming_json struct {
@@ -199,6 +200,7 @@ var settings = Settings{
 	Beacon_metrics_size:  30,
 	HA_send_interval:     5,
 	HA_send_changes_only: false,
+	RSSI_min_threshold:   -90,
 }
 
 // utility function
@@ -625,6 +627,14 @@ func IncomingMQTTProcessor(updateInterval time.Duration, cl *client.Client, db *
 						}
 						latest_list_lock.Unlock()
 						//continue
+						return
+					}
+
+					// ignore this beacon if it falls below RSSI setting
+					// threshold
+
+					if int64(incoming.RSSI) < settings.RSSI_min_threshold {
+						//fmt.Printf("rejecting rssi incoming %d < %d\n", int64(incoming.RSSI), settings.RSSI_min_threshold)
 						return
 					}
 

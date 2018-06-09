@@ -14,6 +14,19 @@
 	<div class="progress" id="ws_status">
     <div class="indeterminate blue"></div>
 	</div>
+
+	<div class="chip indigo accent-1" >
+		{ closest.id }
+	</div> 
+	closest to 
+	<div class="chip indigo accent-1" >
+		{ closest.location }
+	</div>
+	with 
+	<div class="chip indigo accent-1" >
+		{ closest.rssi }
+	</div>
+
   <table>
 			<tr>
 				<th>Beacon ID</th>
@@ -32,6 +45,7 @@
 
   <script>
     this.beacons = opts.beacons
+		this.closest = opts.closest
 
 		var self = this;
 		var ws;
@@ -48,7 +62,7 @@
 			var sig = "sig1";
 
 			if(unit == "db") {
-				console.log(distance);
+				//console.log(distance);
 				if(distance > 100) {
 					sig = "sig1";
 				}
@@ -61,7 +75,7 @@
 				else {
 					sig = "sig4";
 				}
-				console.log(sig+" ,"+distance)
+				//console.log(sig+" ,"+distance)
 			}
 			else if(unit == "meters") {
 				if(distance > 15) {
@@ -126,6 +140,7 @@
 			}
 
 			var data = JSON.parse(evt.data);
+			var data_rssi = JSON.parse(evt.data);
 							
 			data.sort(function(a, b) {
 				//return parseInt(a.last_seen) - parseInt(b.last_seen);
@@ -136,6 +151,22 @@
 			//console.log("latest")
 			//console.log(data)
 			self.beacons = list_filter(data);
+			
+			//sort on rssi
+			data_rssi = data_rssi.sort(function(a, b) {
+				//return parseInt(a.last_seen) - parseInt(b.last_seen);
+				if(a.incoming_json.rssi < b.incoming_json.rssi) return -1;
+				if(a.incoming_json.rssi > b.incoming_json.rssi) return 1;
+				return 0;
+			});
+
+			var c = data_rssi[data_rssi.length-1]
+			self.closest = {
+				"id": c.beacon_id, 
+				"rssi": c.incoming_json.rssi,
+				"location": c.beacon_location,
+			}
+
 			self.update();
 		};
 				
@@ -195,6 +226,22 @@
 								return 0;
 					});
 					self.beacons = list_filter(data);
+					
+					//sort on rssi
+					data.sort(function(a, b) {
+							//return parseInt(a.last_seen) - parseInt(b.last_seen);
+							if(a.incoming_json.rssi < b.incoming_json.rssi) return -1;
+							if(a.incoming_json.rssi > b.incoming_json.rssi) return 1;
+							return 0;
+							});
+
+					var c = data[data.length-1]
+					self.closest = {
+						"id": c.beacon_id, 
+						"rssi": c.incoming_json.rssi,
+						"location": c.beacon_location,
+					}
+
 					self.update()
 			});
 		}
