@@ -6,7 +6,7 @@ RUN apk update \
  && apk add ca-certificates wget unzip \
  && update-ca-certificates
 
-RUN wget https://github.com/happy-bubbles/presence/releases/download/1.8.0/presence_linux_386.zip
+RUN wget https://github.com/happy-bubbles/presence/releases/download/1.8.3/presence_linux_386.zip
 
 RUN unzip presence_linux_386.zip
 
